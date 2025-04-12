@@ -2694,6 +2694,408 @@
             
             // ...existing code...
         }
+
+        // Clear rule effects before each selection to avoid cumulative effects
+        function clearRuleEffects() {
+            // Clear disabled parameters
+            document.querySelectorAll('.disabled-parameter').forEach(elem => {
+                elem.classList.remove('disabled-parameter');
+                elem.style.opacity = '';
+            });
+            
+            // Show previously hidden options
+            document.querySelectorAll('.option.hidden-by-rule').forEach(option => {
+                option.style.display = ''; // Reset to default display value
+                option.classList.remove('hidden-by-rule');
+            });
+            
+            // Clear disabled options that weren't hidden
+            document.querySelectorAll('.option.disabled').forEach(option => {
+                option.classList.remove('disabled');
+                option.style.opacity = '';
+                option.style.cursor = 'pointer';
+                
+                // Restore original click handler if it exists
+                if (option.dataset.originalOnclick) {
+                    // Handle function restoration properly
+                    const paramId = option.closest('.parameter').id.split('-')[1];
+                    const optionIndex = Array.from(option.parentNode.children).indexOf(option);
+                    
+                    // Recreate proper click handling
+                    option.onclick = function() {
+                        selectOption(parseInt(paramId), optionIndex);
+                    };
+                }
+            });
+            
+            // Clear suggestions
+            document.querySelectorAll('.option.suggested').forEach(option => {
+                option.classList.remove('suggested');
+                option.style.borderLeft = '';
+                
+                // Remove suggestion indicator
+                const indicator = option.querySelector('.suggestion-indicator');
+                if (indicator) {
+                    option.removeChild(indicator);
+                }
+            });
+            
+            // Clear gender suggestions
+            document.querySelectorAll('.option.suggested-gender').forEach(option => {
+                option.classList.remove('suggested-gender');
+                option.style.borderRight = '';
+                
+                // Remove gender match indicator
+                const indicator = option.querySelector('.gender-match-indicator');
+                if (indicator) {
+                    option.removeChild(indicator);
+                }
+            });
+            
+            // Clear suggestion messages
+            document.querySelectorAll('.suggestion-message').forEach(msg => {
+                msg.parentNode.removeChild(msg);
+            });
+        }
+
+        // Apply all rules based on current selections
+        function applyAllRules() {
+            // Clear all rule effects first
+            clearRuleEffects();
+            
+            // Apply rules for each selected parameter
+            Object.entries(selections).forEach(([paramId, selection]) => {
+                paramId = parseInt(paramId);
+                
+                if (typeof selection === 'object') {
+                    // Handle Hair Color variants
+                    applyRules(paramId, selection.mainColorIndex, selection.variantIndex);
+                } else {
+                    // Standard parameter
+                    applyRules(paramId, selection);
+                }
+            });
+        }
+
+        // Apply all rules but ensure completed groups remain accessible
+        function applyAllRulesWithCompletedGroups() {
+            // First clear all rule effects
+            clearRuleEffects();
+            
+            // Apply rules for each selected parameter
+            Object.entries(selections).forEach(([paramId, selection]) => {
+                paramId = parseInt(paramId);
+                
+                if (typeof selection === 'object') {
+                    // Handle Hair Color variants
+                    applyRules(paramId, selection.mainColorIndex, selection.variantIndex);
+                } else {
+                    // Standard parameter
+                    applyRules(paramId, selection);
+                }
+            });
+            
+            // Now re-enable parameters in completed groups
+            for (let groupNum = 1; groupNum <= 4; groupNum++) {
+                const groupButton = document.getElementById(`group-${groupNum}`);
+                
+                if (groupButton && groupButton.classList.contains('completed')) {
+                    // This group is completed, make sure its parameters are enabled
+                    const group = taxonomyData[groupNum];
+                    if (group && group.parameters) {
+                        group.parameters.forEach(param => {
+                            const paramElement = document.getElementById(`parameter-${param.id}`);
+                            if (paramElement) {
+                                paramElement.classList.remove('disabled-parameter');
+                                paramElement.style.opacity = '';
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        // Apply rules based on parameter selection
+        function applyRules(paramId, optionIndex, variantIndex) {
+            const groupNum = paramGroups[paramId];
+            if (!groupNum) return;
+            
+            const parameter = taxonomyData[groupNum].parameters.find(p => p.id === paramId);
+            if (!parameter) return;
+            
+            // Get option name (handling Hair Color with variants specially)
+            let optionName;
+            if (parameter.name === "Hair Color" && variantIndex !== undefined) {
+                const mainOption = parameter.options[optionIndex];
+                optionName = mainOption.variants[variantIndex].name;
+            } else {
+                optionName = parameter.options[optionIndex].name;
+            }
+            
+            console.log(`Applying rules for ${parameter.name} = "${optionName}"`);
+            
+            // Apply absolute rules first
+            const applicableAbsoluteRules = rules.absoluteRules.filter(rule => 
+                rule.condition.paramId === paramId && rule.condition.optionName === optionName);
+            applicableAbsoluteRules.forEach(rule => {
+                console.log(`Applying absolute rule: ${parameter.name} = "${optionName}"`);
+                rule.actions.forEach(action => {
+                    applyRuleAction(action);
+                });
+            });
+            
+            // Then apply suggestive rules
+            const applicableSuggestiveRules = rules.suggestiveRules.filter(rule => 
+                rule.condition.paramId === paramId && rule.condition.optionName === optionName);
+            applicableSuggestiveRules.forEach(rule => {
+                console.log(`Applying suggestive rule: ${parameter.name} = "${optionName}"`);
+                rule.suggestions.forEach(suggestion => {
+                    applySuggestion(suggestion);
+                });
+            });
+        }
+
+        // Apply a specific rule action
+        function applyRuleAction(action) {
+            console.log(`Applying action type: ${action.type} for parameter ${action.paramName}`);
+            switch (action.type) {
+                case 'disable':
+                    if (action.disabledOptions) {
+                        disableParameterOptions(action.paramId, action.disabledOptions);
+                    } else {
+                        disableParameter(action.paramId);
+                    }
+                    break;
+                    
+                case 'limit':
+                case 'disableExcept':
+                    limitParameterOptions(action.paramId, action.allowedOptions);
+                    break;
+            }
+        }
+
+        // Apply a suggestion
+        function applySuggestion(suggestion) {
+            console.log(`Suggesting options for parameter ${suggestion.paramName}`);
+            suggestOptions(suggestion.paramId, suggestion.suggestedOptions);
+        }
+
+        // Disable an entire parameter
+        function disableParameter(paramId) {
+            const paramElement = document.getElementById(`parameter-${paramId}`);
+            if (paramElement) {
+                paramElement.classList.add('disabled-parameter');
+                paramElement.style.opacity = '0.5';
+            }
+        }
+
+        // Disable specific options within a parameter
+        function disableParameterOptions(paramId, optionNames) {
+            const paramElement = document.getElementById(`parameter-${paramId}`);
+            if (!paramElement) return;
+            
+            const options = paramElement.querySelectorAll('.option');
+            options.forEach(option => {
+                const optionLabel = option.querySelector('.option-label');
+                if (optionLabel) {
+                    const optionName = optionLabel.textContent;
+                    
+                    // Check if this option should be disabled
+                    if (optionNames.some(name => optionName.includes(name))) {
+                        option.classList.add('disabled');
+                        option.style.opacity = '0.5';
+                        option.style.cursor = 'not-allowed';
+                        
+                        // Save original click handler
+                        if (option.onclick) {
+                            option.dataset.originalOnclick = true;
+                        }
+                        
+                        // Replace with warning handler
+                        option.onclick = () => showRuleWarning(paramId);
+                    }
+                }
+            });
+        }
+
+        // Limit available options (disabling all except the allowed ones)
+        function limitParameterOptions(paramId, allowedOptionNames) {
+            const paramElement = document.getElementById(`parameter-${paramId}`);
+            if (!paramElement) return;
+            
+            const options = paramElement.querySelectorAll('.option');
+            options.forEach(option => {
+                const optionLabel = option.querySelector('.option-label');
+                if (optionLabel) {
+                    const optionName = optionLabel.textContent;
+                    
+                    // Check if this option should be enabled or disabled
+                    let isAllowed = false;
+                    for (const allowedName of allowedOptionNames) {
+                        if (optionName.includes(allowedName)) {
+                            isAllowed = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!isAllowed) {
+                        option.classList.add('disabled');
+                        option.style.opacity = '0.5';
+                        option.style.cursor = 'not-allowed';
+                        
+                        // Save original click handler
+                        if (option.onclick) {
+                            option.dataset.originalOnclick = true;
+                        }
+                        
+                        // Replace with warning handler
+                        option.onclick = () => showRuleWarning(paramId);
+                    }
+                }
+            });
+        }
+
+        // Suggest options
+        function suggestOptions(paramId, suggestedOptionNames) {
+            const paramElement = document.getElementById(`parameter-${paramId}`);
+            if (!paramElement) return;
+            
+            // Add a suggestion message
+            if (suggestedOptionNames.length > 0) {
+                const msgExists = paramElement.querySelector('.suggestion-message');
+                if (!msgExists) {
+                    const msg = document.createElement('div');
+                    msg.className = 'suggestion-message';
+                    msg.style.padding = '10px';
+                    msg.style.marginBottom = '15px';
+                    msg.style.backgroundColor = '#e8f7ff';
+                    msg.style.border = '1px solid #b3e0ff';
+                    msg.style.borderRadius = '4px';
+                    msg.innerHTML = '<strong>Suggested options:</strong> Based on your previous selections, these options are recommended.';
+                    
+                    // Insert after the parameter description
+                    const desc = paramElement.querySelector('.parameter-description');
+                    if (desc && desc.nextSibling) {
+                        paramElement.insertBefore(msg, desc.nextSibling);
+                    }
+                }
+            }
+            
+            const options = paramElement.querySelectorAll('.option');
+            options.forEach(option => {
+                const optionLabel = option.querySelector('.option-label');
+                if (optionLabel) {
+                    const optionName = optionLabel.textContent;
+                    
+                    // Check if this option is suggested
+                    for (const suggestedName of suggestedOptionNames) {
+                        if (optionName.includes(suggestedName)) {
+                            option.classList.add('suggested');
+                            option.style.borderLeft = '4px solid #3498db';
+                            
+                            // Add suggestion indicator if it doesn't exist
+                            if (!option.querySelector('.suggestion-indicator')) {
+                                const indicator = document.createElement('div');
+                                indicator.className = 'suggestion-indicator';
+                                indicator.style.position = 'absolute';
+                                indicator.style.top = '10px';
+                                indicator.style.right = '10px';
+                                indicator.style.backgroundColor = '#3498db';
+                                indicator.style.color = 'white';
+                                indicator.style.borderRadius = '3px';
+                                indicator.style.padding = '2px 6px';
+                                indicator.style.fontSize = '12px';
+                                indicator.textContent = 'Suggested';
+                                
+                                option.style.position = 'relative';
+                                option.appendChild(indicator);
+                            }
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Show a warning when trying to select a disabled option
+        function showRuleWarning(paramId) {
+            // Find the rule that caused this parameter to be disabled
+            const disablingRules = rules.absoluteRules.filter(rule => 
+                rule.actions.some(action => action.paramId === paramId)
+            );
+            
+            let message = "This option is not available due to your current selections:";
+            disablingRules.forEach(rule => {
+                message += `\n- ${rule.condition.paramName} = "${rule.condition.optionName}"`;
+            });
+            
+            message += "\n\nPlease change those selections first if you want to use this option.";
+            alert(message);
+        }
+
+        // Handle facial hair visibility based on gender
+        function handleFacialHairVisibility(isFemale) {
+            // Hide facial hair options for female characters
+            const facialHairParams = [28, 29, 30, 31, 32, 33]; // IDs for facial hair parameters
+            
+            facialHairParams.forEach(paramId => {
+                const paramElement = document.getElementById(`parameter-${paramId}`);
+                if (paramElement) {
+                    if (isFemale) {
+                        paramElement.classList.add('gender-hidden');
+                    } else {
+                        paramElement.classList.remove('gender-hidden');
+                    }
+                }
+            });
+        }
+
+        // Copy character data to clipboard
+        function copyCharacter() {
+            if (Object.keys(completedParams).length === 0) {
+                alert('Please create a character first by selecting parameters.');
+                return;
+            }
+            
+            try {
+                // Create JSON data
+                const characterData = {
+                    name: document.getElementById('character-name-display').textContent || "Unnamed Character",
+                    selections: selections,
+                    completedParams: completedParams,
+                    modifierSelections: modifierSelections,
+                    version: "1.0" // For future compatibility
+                };
+                
+                // Copy to clipboard
+                const jsonString = JSON.stringify(characterData, null, 2);
+                if (navigator.clipboard) {
+                    navigator.clipboard.writeText(jsonString)
+                        .then(() => {
+                            showNotification("Character data copied to clipboard!");
+                        })
+                        .catch(err => {
+                            console.error('Clipboard API failed: ', err);
+                            fallbackCopy(jsonString);
+                        });
+                } else {
+                    fallbackCopy(jsonString);
+                }
+            } catch (err) {
+                console.error('Error copying character data:', err);
+                showNotification("Error copying character data!", true);
+            }
+        }
+
+        // Generate a composed prompt from the character
+        function generateComposedPrompt() {
+            if (Object.keys(completedParams).length === 0) {
+                alert('Please create a character first by selecting parameters.');
+                return '';
+            }
+            
+            return PromptGenerator.generateNaturalLanguageDescription(completedParams, taxonomyData);
+        }
     </script>
 </body>
 </html>
