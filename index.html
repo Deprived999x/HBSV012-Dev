@@ -1246,13 +1246,79 @@
         // Load taxonomy data and rules from external files
         async function loadTaxonomyData() {
             try {
-                // Fetch taxonomy data
-                const response = await fetch('./data/hbsTaxonomy.json');
-                taxonomyData = await response.json();
+                console.log("Attempting to load taxonomy data files");
+                
+                // Initialize taxonomyData as an object to hold all group data
+                taxonomyData = {};
+                
+                // Load Group 1 taxonomy
+                try {
+                    const g1Response = await fetch('./data/hbs-taxonomy-g1-r010.json');
+                    taxonomyData[1] = await g1Response.json();
+                    console.log("Successfully loaded Group 1 taxonomy");
+                } catch (g1Error) {
+                    console.error("Failed to load Group 1 taxonomy:", g1Error);
+                    // Try absolute path as fallback
+                    try {
+                        const g1Response = await fetch('/data/hbs-taxonomy-g1-r010.json');
+                        taxonomyData[1] = await g1Response.json();
+                    } catch (error) {
+                        console.error("Failed to load Group 1 with absolute path:", error);
+                    }
+                }
+                
+                // Load Group 3 taxonomy
+                try {
+                    const g3Response = await fetch('./data/hbs-taxonomy-g3-r010.json');
+                    taxonomyData[3] = await g3Response.json();
+                    console.log("Successfully loaded Group 3 taxonomy");
+                } catch (g3Error) {
+                    console.error("Failed to load Group 3 taxonomy:", g3Error);
+                    // Try absolute path as fallback
+                    try {
+                        const g3Response = await fetch('/data/hbs-taxonomy-g3-r010.json');
+                        taxonomyData[3] = await g3Response.json();
+                    } catch (error) {
+                        console.error("Failed to load Group 3 with absolute path:", error);
+                    }
+                }
+                
+                // Load Group 4 taxonomy
+                try {
+                    const g4Response = await fetch('./data/hbs-taxonomy-g4-r010.json');
+                    taxonomyData[4] = await g4Response.json();
+                    console.log("Successfully loaded Group 4 taxonomy");
+                } catch (g4Error) {
+                    console.error("Failed to load Group 4 taxonomy:", g4Error);
+                    // Try absolute path as fallback
+                    try {
+                        const g4Response = await fetch('/data/hbs-taxonomy-g4-r010.json');
+                        taxonomyData[4] = await g4Response.json();
+                    } catch (error) {
+                        console.error("Failed to load Group 4 with absolute path:", error);
+                    }
+                }
                 
                 // Load rules
-                const rulesResponse = await fetch('./data/rules.json');
-                rules = await rulesResponse.json();
+                try {
+                    const rulesResponse = await fetch('./data/hbs-rules-r010.json');
+                    rules = await rulesResponse.json();
+                    console.log("Successfully loaded rules");
+                } catch (rulesError) {
+                    console.error("Failed to load rules:", rulesError);
+                    // Try absolute path as fallback
+                    try {
+                        const rulesResponse = await fetch('/data/hbs-rules-r010.json');
+                        rules = await rulesResponse.json();
+                    } catch (error) {
+                        console.error("Failed to load rules with absolute path:", error);
+                    }
+                }
+                
+                // Check if we successfully loaded the required taxonomy data
+                if (!taxonomyData[1] || !taxonomyData[3] || !taxonomyData[4]) {
+                    throw new Error("Failed to load all required taxonomy groups");
+                }
                 
                 // Initialize UI once data is loaded
                 initializeUI();
@@ -1261,8 +1327,15 @@
                 document.getElementById('main-container').innerHTML = `
                     <div class="error">
                         <h3>Error Loading Data</h3>
-                        <p>Could not load taxonomy data. Please check your internet connection and try again.</p>
-                        <pre>${error.message}</pre>
+                        <p>Could not load taxonomy data. Please check the console for detailed errors.</p>
+                        <p>Attempted to load data files with the following names:</p>
+                        <ul>
+                            <li>hbs-taxonomy-g1-r010.json</li>
+                            <li>hbs-taxonomy-g3-r010.json</li>
+                            <li>hbs-taxonomy-g4-r010.json</li>
+                            <li>hbs-rules-r010.json</li>
+                        </ul>
+                        <p>Error details: ${error.message}</p>
                     </div>
                 `;
             }
