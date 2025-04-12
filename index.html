@@ -651,12 +651,12 @@
     </style>
 </head>
 <body>
-    <h1>Human Build System - Full Demo r010</h1>
+    <h1>Human Build System - Full Demo r012</h1>
     <p>Create a character by selecting parameters across all four taxonomy groups. This is a full implementation using the complete HBS taxonomy.</p>
     
     <div class="character-preview">
-        <!-- Left side: Character Summary -->
-        <div class="character-summary-container">
+        <!-- Left side: Character Summary - HIDDEN -->
+        <div class="character-summary-container" style="display: none;">
             <h2 class="section-header">Character Summary</h2>
             <!-- Add character name display -->
             <div class="character-name" id="character-name-display"></div>
@@ -665,8 +665,8 @@
             </div>
         </div>
         
-        <!-- Right side: Tab navigation for different formats -->
-        <div class="character-formats-container">
+        <!-- Right side: Tab navigation for different formats - Now full width -->
+        <div class="character-formats-container" style="flex: 1 1 100%; width: 100%;">
             <h2 class="section-header">Output Formats</h2>
             <div class="prompt-tabs">
                 <button class="tab-button active" data-tab="description">Description</button>
@@ -1413,1045 +1413,6 @@
             }
         }
         
-        // Select an option for a parameter
-        function selectOption(paramId, optionIndex, variantIndex) {
-            // Get all options for this parameter
-            const options = document.getElementById(`options-${paramId}`).querySelectorAll('.option');
-            
-            // Remove 'selected' class from all options
-            for (let i = 0; i < options.length; i++) {
-                options[i].classList.remove('selected');
-            }
-            
-            // For Hair Color, we need to find the correct option by calculating its position
-            const groupNum = paramGroups[paramId];
-            const parameter = taxonomyData[groupNum].parameters.find(p => p.id === paramId);
-            
-            let selectedOptionElement;
-            if (parameter.name === "Hair Color" && variantIndex !== undefined) {
-                // Find the correct option by counting
-                let optionCount = 0;
-                for (let i = 0; i < optionIndex; i++) {
-                    if (parameter.options[i].variants) {
-                        optionCount += parameter.options[i].variants.length;
-                    } else {
-                        optionCount++;
-                    }
-                }
-                selectedOptionElement = options[optionCount + variantIndex];
-                // Store both main color and variant
-                selections[paramId] = {
-                    mainColorIndex: optionIndex,
-                    variantIndex: variantIndex
-                };
-            } else {
-                // Standard option selection
-                selectedOptionElement = options[optionIndex];
-                selections[paramId] = optionIndex;
-            }
-            
-            // Add 'selected' class to the chosen option
-            if (selectedOptionElement) {
-                selectedOptionElement.classList.add('selected');
-            }
-            
-            // Special handling when gender is selected
-            if (paramId === 1) {
-                // Clear any previously applied gender suggestions
-                document.querySelectorAll('.option.suggested-gender').forEach(option => {
-                    option.classList.remove('suggested-gender');
-                    option.style.borderRight = '';
-                    
-                    const indicator = option.querySelector('.gender-match-indicator');
-                    if (indicator) {
-                        option.removeChild(indicator);
-                    }
-                });
-                
-                // Hide or show facial hair parameter based on gender
-                const selectedGender = parameter.options[optionIndex].name.toLowerCase();
-                handleFacialHairVisibility(selectedGender.includes('female'));
-            }
-            
-            // Apply rules after selection
-            clearRuleEffects(); // Clear existing rule effects
-            applyRules(paramId, optionIndex, variantIndex);
-            
-            // Update character summary
-            updateCharacterSummary();
-        }
-        
-        // Add new function to handle facial hair visibility
-        function handleFacialHairVisibility(isFemale) {
-            // Find the Facial Hair parameter (usually ID 18)
-            const facialHairParam = Array.from(document.querySelectorAll('.parameter'))
-                .find(param => param.querySelector('h3').textContent.includes('Facial Hair'));
-            if (!facialHairParam) return;
-            
-            const paramId = parseInt(facialHairParam.id.split('-')[1]);
-            
-            if (isFemale) {
-                // For female characters, hide facial hair parameter completely
-                facialHairParam.style.display = 'none';
-                facialHairParam.classList.add('gender-hidden');
-                
-                // Add data attribute to indicate it's hidden for females
-                facialHairParam.dataset.hiddenForFemale = 'true';
-                
-                console.log("Female character detected - facial hair will be hidden and auto-completed when reached in sequence");
-                
-                // NOTE: We don't auto-complete here - we'll do it in the normal parameter flow
-                // when we actually reach this parameter, allowing for proper group progression
-            } else {
-                // For male characters, ensure facial hair parameter is visible
-                facialHairParam.style.display = '';
-                facialHairParam.classList.remove('gender-hidden');
-                facialHairParam.removeAttribute('data-hidden-for-female');
-                
-                // If it was automatically completed for a female previously, remove completion
-                if (completedParams[paramId] && completedParams[paramId].value === "None (Female character)") {
-                    delete completedParams[paramId];
-                    
-                    // Also remove it from the completed section if it exists
-                    const completedItem = document.getElementById(`completed-item-${paramId}`);
-                    if (completedItem) completedItem.remove();
-                }
-            }
-        }
-        
-        // Add an additional function to auto-complete facial hair when parameter is reached naturally
-        function checkFacialHairAutoComplete(paramId) {
-            // Check if this is the facial hair parameter and if the selected gender is female
-            if (paramGroups[paramId] === 3) { // Group 3 = Facial Features
-                const facialHairParam = Array.from(document.querySelectorAll('.parameter'))
-                    .find(param => param.querySelector('h3').textContent.includes('Facial Hair'));
-                if (facialHairParam && parseInt(facialHairParam.id.split('-')[1]) === paramId) {
-                    // Get the selected gender
-                    if (selections[1] !== undefined) { // Gender is parameter ID 1
-                        const genderOption = taxonomyData[1].parameters.find(p => p.id === 1).options[selections[1]];
-                        const selectedGender = genderOption.name.toLowerCase();
-                        
-                        if (selectedGender.includes('female')) {
-                            // Auto-complete facial hair for females when we actually reach this parameter
-                            completedParams[paramId] = {
-                                value: "None (Female character)",
-                                visual: "Not applicable for female characters",
-                                seenIn: "",
-                                modifiers: {}
-                            };
-                            
-                            console.log("Auto-completing facial hair for female character");
-                            
-                            return true; // Signal that the parameter was auto-completed
-                        }
-                    }
-                }
-            }
-            return false; // Not auto-completed
-        }
-
-        // Select a modifier option
-        function selectModifier(paramId, modifierName, optionIndex) {
-            // Initialize if doesn't exist yet
-            if (!modifierSelections[paramId]) {
-                modifierSelections[paramId] = {};
-            }
-            
-            const modifierElement = Array.from(document.getElementById(`options-${paramId}`).querySelectorAll('.modifier'))
-                .find(mod => mod.querySelector('.modifier-name').textContent === modifierName);
-            if (!modifierElement) return;
-            
-            // Get all modifier options
-            const modOptions = modifierElement.querySelectorAll('.modifier-option');
-            
-            // Remove 'selected' class from all options
-            for (let i = 0; i < modOptions.length; i++) {
-                modOptions[i].classList.remove('selected');
-            }
-            
-            // Add 'selected' class to the chosen option
-            modOptions[optionIndex].classList.add('selected');
-            
-            // Store the selection
-            modifierSelections[paramId][modifierName] = optionIndex;
-            
-            // Update character summary
-            updateCharacterSummary();
-        }
-        
-        // Apply rules based on parameter selection
-        function applyRules(paramId, optionIndex, variantIndex) {
-            const groupNum = paramGroups[paramId];
-            if (!groupNum) return;
-            
-            const parameter = taxonomyData[groupNum].parameters.find(p => p.id === paramId);
-            if (!parameter) return;
-            
-            // Get option name (handling Hair Color with variants specially)
-            let optionName;
-            if (parameter.name === "Hair Color" && variantIndex !== undefined) {
-                const mainOption = parameter.options[optionIndex];
-                optionName = mainOption.variants[variantIndex].name;
-            } else {
-                optionName = parameter.options[optionIndex].name;
-            }
-            
-            console.log(`Applying rules for ${parameter.name} = "${optionName}"`);
-            
-            // Apply absolute rules first
-            const applicableAbsoluteRules = rules.absoluteRules.filter(rule => 
-                rule.condition.paramId === paramId && rule.condition.optionName === optionName);
-            applicableAbsoluteRules.forEach(rule => {
-                console.log(`Applying absolute rule: ${parameter.name} = "${optionName}"`);
-                rule.actions.forEach(action => {
-                    applyRuleAction(action);
-                });
-            });
-            
-            // Then apply suggestive rules
-            const applicableSuggestiveRules = rules.suggestiveRules.filter(rule => 
-                rule.condition.paramId === paramId && rule.condition.optionName === optionName);
-            applicableSuggestiveRules.forEach(rule => {
-                console.log(`Applying suggestive rule: ${parameter.name} = "${optionName}"`);
-                rule.suggestions.forEach(suggestion => {
-                    applySuggestion(suggestion);
-                });
-            });
-            
-            // Apply gender-based "As Seen In" suggestions based on current gender selection            
-            applyGenderBasedSuggestions();
-        }
-
-        // Apply suggestions based on gender references in "As Seen In" field
-        function applyGenderBasedSuggestions() {
-            // First check if gender is selected
-            if (selections[1] === undefined) return; // Gender is parameter ID 1
-            
-            const genderOption = taxonomyData[1].parameters.find(p => p.id === 1).options[selections[1]];
-            const selectedGender = genderOption.name.toLowerCase();
-            const isMale = selectedGender.includes('male');
-            const isFemale = selectedGender.includes('female');
-            
-            if (!isMale && !isFemale) return; // No clear gender selected
-            
-            console.log(`Applying gender-based suggestions for ${selectedGender}`);
-            
-            // Scan all parameter options for gender references in "As Seen In"
-            for (let groupNum = 1; groupNum <= 4; groupNum++) {
-                if (!taxonomyData[groupNum] || !taxonomyData[groupNum].parameters) continue;
-                
-                taxonomyData[groupNum].parameters.forEach(param => {
-                    // Skip the gender parameter itself
-                    if (param.id === 1) return;
-                    
-                    const paramElement = document.getElementById(`parameter-${param.id}`);
-                    if (!paramElement) return;
-                    
-                    // Helper function to process standard options
-                    const processOption = (option, optionElement) => {
-                        if (!option) return;
-                        
-                        const asSeenIn = option.asSeenIn || option.as_seen_in || option.AsSeenIn || option["As Seen In"] || "";
-                        if (!asSeenIn) return;
-                        
-                        const asSeenInLower = asSeenIn.toLowerCase();
-                        let genderMatch = false;
-                        
-                        // Check for gender references in "As Seen In"
-                        if (isMale && (
-                            asSeenInLower.includes(" he ") || 
-                            asSeenInLower.includes(" him ") || 
-                            asSeenInLower.includes(" his ") || 
-                            asSeenInLower.includes(" male ") || 
-                            asSeenInLower.includes(" men") || 
-                            asSeenInLower.includes(" man") ||
-                            asSeenInLower.includes(" boy") ||
-                            asSeenInLower.includes("masculine")
-                        )) {
-                            genderMatch = true;
-                        } else if (isFemale && (
-                            asSeenInLower.includes(" she ") || 
-                            asSeenInLower.includes(" her ") || 
-                            asSeenInLower.includes(" hers ") || 
-                            asSeenInLower.includes(" female ") || 
-                            asSeenInLower.includes(" women") || 
-                            asSeenInLower.includes(" woman") ||
-                            asSeenInLower.includes(" girl") ||
-                            asSeenInLower.includes("feminine")
-                        )) {
-                            genderMatch = true;
-                        }
-                        
-                        if (genderMatch && optionElement) {
-                            // Add suggestion styling to the option
-                            optionElement.classList.add('suggested-gender');
-                            optionElement.style.borderRight = '4px solid purple';
-                            
-                            // Add "Gender Match" indicator if not already present
-                            if (!optionElement.querySelector('.gender-match-indicator')) {
-                                const genderIndicator = document.createElement('div');
-                                genderIndicator.className = 'gender-match-indicator';
-                                genderIndicator.textContent = 'Gender Match';
-                                genderIndicator.style.color = 'purple';
-                                genderIndicator.style.fontWeight = 'bold';
-                                genderIndicator.style.fontSize = '12px';
-                                genderIndicator.style.position = 'absolute';
-                                genderIndicator.style.top = '5px';
-                                genderIndicator.style.right = '10px';
-                                optionElement.style.position = 'relative';
-                                optionElement.appendChild(genderIndicator);
-                            }
-                        }
-                    };
-                    
-                    // Handle all options for this parameter
-                    const options = paramElement.querySelectorAll('.option');
-                    
-                    // For most parameters, match options to their elements directly
-                    if (param.name !== "Hair Color") {
-                        param.options.forEach((option, i) => {
-                            if (i < options.length) {
-                                processOption(option, options[i]);
-                            }
-                        });
-                    } else {
-                        // For Hair Color, we need to match variant options
-                        let optionIndex = 0;
-                        param.options.forEach(mainOption => {
-                            if (mainOption.variants) {
-                                mainOption.variants.forEach(variant => {
-                                    if (optionIndex < options.length) {
-                                        processOption(variant, options[optionIndex++]);
-                                    }
-                                });
-                            } else {
-                                if (optionIndex < options.length) {
-                                    processOption(mainOption, options[optionIndex++]);
-                                }
-                            }
-                        });
-                    }
-                });
-            }
-        }
-
-        // Apply a specific rule action
-        function applyRuleAction(action) {
-            console.log(`Applying action type: ${action.type} for parameter ${action.paramName}`);
-            switch (action.type) {
-                case 'disable':
-                    if (action.disabledOptions) {
-                        disableParameterOptions(action.paramId, action.disabledOptions);
-                    } else {
-                        disableParameter(action.paramId);
-                    }
-                    break;
-                    
-                case 'limit':
-                case 'disableExcept':
-                    limitParameterOptions(action.paramId, action.allowedOptions);
-                    break;
-            }
-        }
-
-        // Apply a suggestion
-        function applySuggestion(suggestion) {
-            console.log(`Suggesting options for parameter ${suggestion.paramName}`);
-            suggestOptions(suggestion.paramId, suggestion.suggestedOptions);
-        }
-
-        // Disable an entire parameter - update to hide it instead of just disabling
-        function disableParameter(paramId) {
-            const paramElement = document.getElementById(`parameter-${paramId}`);
-            if (!paramElement) return;
-            
-            // Add visual indication that parameter is disabled
-            paramElement.classList.add('disabled-parameter');
-            paramElement.style.opacity = '0.5';
-            
-            // Hide all options instead of just disabling them
-            const options = paramElement.querySelectorAll('.option');
-            options.forEach(option => {
-                // Hide the option completely
-                option.style.display = 'none';
-                option.classList.add('hidden-by-rule');
-            });
-            
-            // Disable the next button
-            const nextButton = paramElement.querySelector('.next-button');
-            if (nextButton) {
-                nextButton.disabled = true;
-                nextButton.style.opacity = '0.5';
-                nextButton.style.cursor = 'not-allowed';
-            }
-        }
-
-        // Disable specific options in a parameter - update to hide them instead
-        function disableParameterOptions(paramId, disabledOptions) {
-            const paramElement = document.getElementById(`parameter-${paramId}`);
-            if (!paramElement) return;
-            
-            const options = paramElement.querySelectorAll('.option');
-            options.forEach(option => {
-                const optionLabel = option.querySelector('.option-label').textContent;
-                if (disabledOptions.some(name => optionLabel.includes(name))) {
-                    // Hide this option completely instead of just disabling it
-                    option.style.display = 'none';
-                    option.classList.add('hidden-by-rule');
-                }
-            });
-        }
-
-        // Limit a parameter to only certain options - update to hide non-allowed options
-        function limitParameterOptions(paramId, allowedOptions) {
-            const paramElement = document.getElementById(`parameter-${paramId}`);
-            if (!paramElement) return;
-            
-            const options = paramElement.querySelectorAll('.option');
-            options.forEach(option => {
-                const optionLabel = option.querySelector('.option-label').textContent;
-                if (!allowedOptions.some(name => optionLabel.includes(name))) {
-                    // Hide this option completely instead of just disabling it
-                    option.style.display = 'none';
-                    option.classList.add('hidden-by-rule');
-                }
-            });
-        }
-
-        // Suggest options for a parameter
-        function suggestOptions(paramId, suggestedOptions) {
-            const paramElement = document.getElementById(`parameter-${paramId}`);
-            if (!paramElement) return;
-            
-            // Add a message to the parameter indicating suggestions are available
-            if (!paramElement.querySelector('.suggestion-message')) {
-                const suggestionMessage = document.createElement('div');
-                suggestionMessage.className = 'suggestion-message';
-                suggestionMessage.innerHTML = '<strong>Suggestions available:</strong> Based on your selections, these options are recommended.';
-                suggestionMessage.style.color = 'green';
-                suggestionMessage.style.marginBottom = '10px';
-                suggestionMessage.style.padding = '5px';
-                suggestionMessage.style.border = '1px solid green';
-                suggestionMessage.style.borderRadius = '4px';
-                
-                // Insert after the parameter description
-                const paramDesc = paramElement.querySelector('.parameter-description');
-                if (paramDesc && paramDesc.nextSibling) {
-                    paramElement.insertBefore(suggestionMessage, paramDesc.nextSibling);
-                } else {
-                    paramElement.insertBefore(suggestionMessage, paramElement.querySelector('.options-container'));
-                }
-            }
-            
-            // Highlight suggested options
-            const options = paramElement.querySelectorAll('.option');
-            options.forEach(option => {
-                const optionLabel = option.querySelector('.option-label').textContent;
-                if (suggestedOptions.some(name => optionLabel.includes(name))) {
-                    option.classList.add('suggested');
-                    option.style.borderLeft = '4px solid green';
-                    
-                    // Add "Suggested" indicator if not already present
-                    if (!option.querySelector('.suggestion-indicator')) {
-                        const suggestIndicator = document.createElement('div');
-                        suggestIndicator.className = 'suggestion-indicator';
-                        suggestIndicator.textContent = 'Suggested';
-                        suggestIndicator.style.color = 'green';
-                        suggestIndicator.style.fontWeight = 'bold';
-                        suggestIndicator.style.fontSize = '12px';
-                        suggestIndicator.style.position = 'absolute';
-                        suggestIndicator.style.top = '5px';
-                        suggestIndicator.style.right = '10px';
-                        option.style.position = 'relative';
-                        option.appendChild(suggestIndicator);
-                    }
-                }
-            });
-        }
-
-        // Show a warning when trying to select a disabled option
-        function showRuleWarning(paramId) {
-            // Find the rule that caused this parameter to be disabled
-            const disablingRules = rules.absoluteRules.filter(rule => 
-                rule.actions.some(action => action.paramId === paramId)
-            );
-            
-            let message = "This option is not available due to your current selections:";
-            disablingRules.forEach(rule => {
-                message += `\n- ${rule.condition.paramName} = "${rule.condition.optionName}"`;
-            });
-            
-            message += "\n\nPlease change those selections first if you want to use this option.";
-            alert(message);
-        }
-
-        // Clear rule effects before each selection to avoid cumulative effects - update to restore hidden options
-        function clearRuleEffects() {
-            // Clear disabled parameters
-            document.querySelectorAll('.disabled-parameter').forEach(elem => {
-                elem.classList.remove('disabled-parameter');
-                elem.style.opacity = '';
-            });
-            
-            // Show previously hidden options
-            document.querySelectorAll('.option.hidden-by-rule').forEach(option => {
-                option.style.display = ''; // Reset to default display value
-                option.classList.remove('hidden-by-rule');
-            });
-            
-            // Clear disabled options that weren't hidden
-            document.querySelectorAll('.option.disabled').forEach(option => {
-                option.classList.remove('disabled');
-                option.style.opacity = '';
-                option.style.cursor = 'pointer';
-                
-                // Restore original click handler if it exists
-                if (option.dataset.originalOnclick) {
-                    // Handle function restoration properly
-                    const paramId = option.closest('.parameter').id.split('-')[1];
-                    const optionIndex = Array.from(option.parentNode.children).indexOf(option);
-                    
-                    // Recreate proper click handling
-                    option.onclick = function() {
-                        // Extract variant index for Hair Color if needed
-                        if (option.closest('.parameter').querySelector('h3').textContent.includes('Hair Color')) {
-                            // Find the main color and variant index
-                            const mainColorOptions = option.closest('.parameter').querySelectorAll('.option');
-                            let currentIndex = 0;
-                            let mainColorIndex = 0;
-                            let variantIndex = 0;
-                            
-                            // Calculate the indices
-                            mainColorIndex = Math.floor(optionIndex / taxonomyData[paramGroups[paramId]]
-                                .parameters.find(p => p.id == paramId).options[0].variants.length);
-                            variantIndex = optionIndex % taxonomyData[paramGroups[paramId]]
-                                .parameters.find(p => p.id == paramId).options[0].variants.length;
-                            
-                            selectOption(parseInt(paramId), mainColorIndex, variantIndex);
-                        } else {
-                            selectOption(parseInt(paramId), optionIndex);
-                        }
-                    };
-                    delete option.dataset.originalOnclick;
-                }
-            });
-            
-            // Enable all next buttons
-            document.querySelectorAll('.next-button').forEach(button => {
-                button.disabled = false;
-                button.style.opacity = '';
-                button.style.cursor = 'pointer';
-            });
-            
-            // Clear suggested options
-            document.querySelectorAll('.option.suggested').forEach(option => {
-                option.classList.remove('suggested');
-                option.style.borderLeft = '';
-                
-                // Remove suggestion indicator
-                const indicator = option.querySelector('.suggestion-indicator');
-                if (indicator) {
-                    option.removeChild(indicator);
-                }
-            });
-            
-            // Clear gender suggestions
-            document.querySelectorAll('.option.suggested-gender').forEach(option => {
-                option.classList.remove('suggested-gender');
-                option.style.borderRight = '';
-                
-                // Remove gender match indicator
-                const indicator = option.querySelector('.gender-match-indicator');
-                if (indicator) {
-                    option.removeChild(indicator);
-                }
-            });
-            
-            // Clear suggestion messages
-            document.querySelectorAll('.suggestion-message').forEach(msg => {
-                msg.parentNode.removeChild(msg);
-            });
-        }
-
-        // Apply all rules based on current selections
-        function applyAllRules() {
-            // Clear all rule effects first
-            clearRuleEffects();
-            
-            // Apply rules for each selected parameter
-            Object.entries(selections).forEach(([paramId, selection]) => {
-                paramId = parseInt(paramId);
-                
-                if (typeof selection === 'object') {
-                    // Handle Hair Color variants
-                    applyRules(paramId, selection.mainColorIndex, selection.variantIndex);
-                } else {
-                    // Standard parameter
-                    applyRules(paramId, selection);
-                }
-            });
-        }
-
-        // Apply all rules but ensure completed groups remain accessible
-        function applyAllRulesWithCompletedGroups() {
-            // First clear all rule effects
-            clearRuleEffects();
-            
-            // Apply rules for each selected parameter
-            Object.entries(selections).forEach(([paramId, selection]) => {
-                paramId = parseInt(paramId);
-                
-                if (typeof selection === 'object') {
-                    // Handle Hair Color variants
-                    applyRules(paramId, selection.mainColorIndex, selection.variantIndex);
-                } else {
-                    // Standard parameter
-                    applyRules(paramId, selection);
-                }
-            });
-            
-            // Now re-enable parameters in completed groups
-            for (let groupNum = 1; groupNum <= 4; groupNum++) {
-                const groupButton = document.getElementById(`group-${groupNum}`);
-                
-                if (groupButton && groupButton.classList.contains('completed')) {
-                    // This group is completed, make sure its parameters are accessible
-                    const group = taxonomyData[groupNum];
-                    if (group && group.parameters) {
-                        group.parameters.forEach(param => {
-                            const paramId = param.id;
-                            const paramElement = document.getElementById(`parameter-${paramId}`);
-                            
-                            if (paramElement) {
-                                // Re-enable the parameter if it was disabled by rules
-                                if (paramElement.classList.contains('disabled-parameter')) {
-                                    paramElement.classList.remove('disabled-parameter');
-                                    paramElement.style.opacity = '';
-                                }
-                                
-                                // Also show options that might have been hidden
-                                paramElement.querySelectorAll('.option.hidden-by-rule').forEach(option => {
-                                    option.style.display = '';
-                                    option.classList.remove('hidden-by-rule');
-                                });
-                                
-                                // Enable the next button too
-                                const nextButton = paramElement.querySelector('.next-button');
-                                if (nextButton) {
-                                    nextButton.disabled = false;
-                                    nextButton.style.opacity = '';
-                                    nextButton.style.cursor = 'pointer';
-                                }
-                            }
-                        });
-                    }
-                }
-            }
-        }
-
-        // Edit a parameter that was already completed
-        function editParameter(paramId) {
-            const groupNum = paramGroups[paramId];
-            
-            // Hide all parameters in this group
-            taxonomyData[groupNum].parameters.forEach(param => {
-                document.getElementById(`parameter-${param.id}`).classList.add('hidden');
-            });
-            
-            // Show the parameter to edit
-            const paramElement = document.getElementById(`parameter-${paramId}`);
-            paramElement.classList.remove('hidden');
-            
-            // Remove the disabled-parameter class if it exists when editing
-            if (paramElement.classList.contains('disabled-parameter')) {
-                paramElement.classList.remove('disabled-parameter');
-                paramElement.style.opacity = '';
-                
-                // Also re-enable all options when editing a previously disabled parameter
-                const options = paramElement.querySelectorAll('.option');
-                options.forEach(option => {
-                    option.classList.remove('disabled');
-                    option.style.opacity = '';
-                    option.style.cursor = 'pointer';
-                    
-                    // Restore click handlers
-                    const paramObj = taxonomyData[groupNum].parameters.find(p => p.id === paramId);
-                    if (paramObj && paramObj.name === "Hair Color") {
-                        // Special handling for Hair Color with variants
-                        // This is more complex and would need to restore variant handlers
-                    } else {
-                        // For standard parameters
-                        const optionIndex = Array.from(option.parentNode.children).indexOf(option);
-                        option.onclick = () => selectOption(paramId, optionIndex);
-                    }
-                });
-                
-                // Re-enable the next button
-                const nextButton = paramElement.querySelector('.next-button');
-                if (nextButton) {
-                    nextButton.disabled = false;
-                    nextButton.style.opacity = '';
-                    nextButton.style.cursor = 'pointer';
-                }
-            }
-            
-            // Make sure group is expanded
-            if (!document.getElementById(`content-${groupNum}`).classList.contains('active')) {
-                toggleGroup(groupNum);
-            }
-            
-            // Re-select the previously selected option
-            if (selections[paramId] !== undefined) {
-                if (typeof selections[paramId] === 'object') {
-                    // For Hair Color with variants
-                    selectOption(paramId, selections[paramId].mainColorIndex, selections[paramId].variantIndex);
-                } else {
-                    // For standard options
-                    selectOption(paramId, selections[paramId]);
-                }
-            }
-            
-            // Re-select modifiers
-            if (modifierSelections[paramId]) {
-                Object.entries(modifierSelections[paramId]).forEach(([modifierName, optionIndex]) => {
-                    const modifierContainer = document.getElementById(`options-${paramId}`);
-                    const modifierSection = Array.from(modifierContainer.querySelectorAll('.modifier')).find(
-                        el => el.querySelector('.modifier-name').textContent === modifierName
-                    );
-                    
-                    if (modifierSection) {
-                        const modOptions = modifierSection.querySelectorAll('.modifier-option');
-                        if (modOptions.length > optionIndex) {
-                            modOptions[optionIndex].classList.add('selected');
-                        }
-                    }
-                });
-            }
-            
-            // Apply all rules after re-editing - but ensure we can still edit this parameter
-            setTimeout(() => {
-                // We need to make sure rules don't re-disable the parameter we're editing
-                applyAllRules();
-                
-                // Force this parameter to be editable even if rules would disable it
-                paramElement.classList.remove('disabled-parameter');
-                paramElement.style.opacity = '';
-                
-                // Also ensure options and next button remain enabled
-                paramElement.querySelectorAll('.option').forEach(option => {
-                    if (option.classList.contains('selected')) {
-                        option.classList.remove('disabled');
-                        option.style.opacity = '';
-                        option.style.cursor = 'pointer';
-                    }
-                });
-                
-                const nextButton = paramElement.querySelector('.next-button');
-                if (nextButton) {
-                    nextButton.disabled = false;
-                    nextButton.style.opacity = '';
-                    nextButton.style.cursor = 'pointer';
-                }
-            }, 200);
-        }
-        
-        // Create a new function to generate a composed prompt from the character data
-        function generateComposedPrompt() {
-            if (Object.keys(completedParams).length === 0) {
-                return "No character parameters selected yet.";
-            }
-            
-            // Start with core identity parameters
-            let prompt = "";
-            
-            // Function to safely get parameter value if it exists and clean it
-            const getParamValue = (groupNum, paramName) => {
-                const param = taxonomyData[groupNum].parameters.find(p => p.name === paramName);
-                if (!param || !completedParams[param.id]) return "";
-                
-                // Skip "None" values
-                const value = completedParams[param.id].value.toLowerCase();
-                if (value.includes('none') || value.match(/none\s*\(default\)/) || value.match(/\(default\)/) || value === "none") {
-                    return "";
-                }
-                return completedParams[param.id].value;
-            };
-            
-            // Clean text to fix common formatting issues
-            const cleanText = (text) => {
-                if (!text) return "";
-                
-                return text
-                    .replace(/,\s*,/g, ',') // Remove double commas
-                    .replace(/\s+,/g, ',') // Remove space before comma
-                    .replace(/\s{2,}/g, ' ') // Replace multiple spaces with single space
-                    .replace(/ an ([aeiou])/gi, ' an $1') // Correct "an" usage before vowels
-                    .replace(/ an ([^aeiou])/gi, ' a $1') // Correct "a" usage before consonants
-                    .replace(/ a ([aeiou])/gi, ' an $1') // Fix "a" to "an" before vowels
-                    .trim();
-            };
-            
-            // 1. Core Identity (Group 1 parameters 1-3)
-            const gender = getParamValue(1, "Gender");
-            const heritage = getParamValue(1, "Visual Heritage");
-            const age = getParamValue(1, "Age");
-            
-            let identityPhrase = "";
-            if (age) identityPhrase += age + " ";
-            if (gender) identityPhrase += gender + " ";
-            if (heritage) identityPhrase += "of " + heritage + " heritage";
-            
-            if (identityPhrase) prompt += cleanText(identityPhrase) + ", ";
-            
-            // 2. Body Structure (Group 1 parameters 4-7)
-            const build = getParamValue(1, "Build");
-            const height = getParamValue(1, "Height");
-            const skinTone = getParamValue(1, "Skin Tone");
-            const skinTexture = getParamValue(1, "Skin Texture");
-            
-            let bodyPhrase = "";
-            if (height) bodyPhrase += height + " height";
-            if (build) {
-                if (bodyPhrase) bodyPhrase += " with ";
-                bodyPhrase += "a " + build.replace(/slightly,?\s*/i, '') + " build";
-            }
-            
-            let skinPhrase = "";
-            if (skinTone) skinPhrase += skinTone;
-            if (skinTexture) {
-                if (skinPhrase) skinPhrase += ", " + skinTexture.replace(/,\s*texture/i, '');
-                else skinPhrase += skinTexture;
-                skinPhrase += " skin";
-            } else if (skinTone) {
-                skinPhrase += " skin";
-            }
-            
-            if (bodyPhrase) prompt += cleanText(bodyPhrase) + ". ";
-            if (skinPhrase) prompt += "Has " + cleanText(skinPhrase) + ". ";
-            
-            // 3. Facial Structure (Group 2 parameters 8-12)
-            const headShape = getParamValue(2, "Head Shape");
-            const faceShape = getParamValue(2, "Face Shape");
-            const forehead = getParamValue(2, "Forehead");
-            const jawline = getParamValue(2, "Jawline");
-            const cheekbones = getParamValue(2, "Cheekbones");
-            
-            let facialStructurePhrase = "";
-            
-            if (headShape) facialStructurePhrase += "a " + headShape + " head";
-            if (faceShape) {
-                if (facialStructurePhrase) facialStructurePhrase += " with ";
-                facialStructurePhrase += "a " + faceShape + " face";
-            }
-            
-            if (facialStructurePhrase) {
-                prompt += "Features " + cleanText(facialStructurePhrase) + ". ";
-            }
-            
-            let additionalFaceDetails = "";
-            
-            if (forehead) additionalFaceDetails += "a " + forehead + " forehead";
-            if (jawline) {
-                if (additionalFaceDetails) additionalFaceDetails += ", ";
-                additionalFaceDetails += "a " + jawline + " jawline";
-            }
-            if (cheekbones) {
-                if (additionalFaceDetails) additionalFaceDetails += ", ";
-                additionalFaceDetails += cheekbones + " cheekbones";
-            }
-            
-            if (additionalFaceDetails) {
-                prompt += "Has " + cleanText(additionalFaceDetails) + ". ";
-            }
-            
-            // 4. Facial Features (Group 3 parameters 13-18)
-            const eyes = getParamValue(3, "Eyes");
-            const eyeColor = getParamValue(3, "Eye Color");
-            const eyebrows = getParamValue(3, "Eyebrows");
-            const nose = getParamValue(3, "Nose");
-            const mouthLips = getParamValue(3, "Mouth and Lips");
-            const facialHair = getParamValue(3, "Facial Hair");
-            
-            // Handle eyes separately
-            let eyesPhrase = "";
-            if (eyes || eyeColor) {
-                eyesPhrase = cleanText((eyes || "") + " " + (eyeColor || "") + " eyes");
-                if (eyebrows) {
-                    eyesPhrase += " with " + eyebrows + " eyebrows";
-                }
-                prompt += eyesPhrase + ". ";
-            } else if (eyebrows) {
-                prompt += "Has " + eyebrows + " eyebrows. ";
-            }
-            
-            // Handle nose and mouth separately
-            if (nose) {
-                prompt += "Features a " + cleanText(nose) + " nose. ";
-            }
-            
-            if (mouthLips) {
-                prompt += "Has " + cleanText(mouthLips) + " lips. ";
-            }
-            
-            // Add facial hair if present
-            if (facialHair) {
-                prompt += "Wears " + cleanText(facialHair) + ". ";
-            }
-            
-            // 5. Hair Attributes (Group 4 parameters 19-26)
-            const hairTexture = getParamValue(4, "Hair Texture");
-            const hairDensity = getParamValue(4, "Hair Density");
-            const hairVolume = getParamValue(4, "Hair Volume");
-            const hairLength = getParamValue(4, "Hair Length");
-            const hairColor = getParamValue(4, "Hair Color");
-            const hairParting = getParamValue(4, "Hair Parting");
-            const bangs = getParamValue(4, "Bangs/Fringe");
-            const hairStyle = getParamValue(4, "Hair Tails/Buns");
-            
-            // Combine hair attributes
-            let hairAttributes = [];
-            if (hairLength) hairAttributes.push(hairLength);
-            if (hairColor) hairAttributes.push(hairColor);
-            if (hairTexture) hairAttributes.push(hairTexture);
-            
-            let hairDetails = [];
-            if (hairDensity) hairDetails.push(hairDensity + " density");
-            if (hairVolume) hairDetails.push(hairVolume + " in volume");
-            
-            let hairStyling = [];
-            if (hairStyle) hairStyling.push(hairStyle);
-            if (hairParting) hairStyling.push("with a " + hairParting + " part");
-            if (bangs) hairStyling.push("with " + bangs + " bangs");
-            
-            let hairPhrase = "";
-            if (hairAttributes.length > 0) {
-                hairPhrase = "Has " + hairAttributes.join(", ") + " hair";
-                
-                if (hairDetails.length > 0) {
-                    hairPhrase += " that is " + hairDetails.join(" and ");
-                }
-                
-                if (hairStyling.length > 0) {
-                    hairPhrase += ", styled " + hairStyling.join(" ");
-                }
-                prompt += cleanText(hairPhrase) + ".";
-            }
-            
-            // Clean up the final prompt
-            return cleanText(prompt)
-                .replace(/\.\s*\./g, '.') // Remove double periods
-                .replace(/,\s*\./g, '.') // Fix comma followed by period
-                .replace(/\s+/g, ' ') // Fix any remaining multiple spaces
-                .trim();
-        }
-
-        // Copy character data - Updated to copy the character summary instead of the active tab content
-        function copyCharacter() {
-            if (Object.keys(completedParams).length === 0) {
-                alert('Please create a character first by selecting parameters.');
-                return;
-            }
-            
-            // Get the character summary content from the left panel
-            const summaryContent = document.getElementById('character-summary').innerHTML;
-            
-            // Convert HTML to text format for better clipboard experience
-            // Create a temporary element to handle the conversion
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = summaryContent;
-            
-            // Process the element to extract a clean text representation
-            let textContent = '';
-            
-            // Add character name if available
-            const nameDisplay = document.getElementById('character-name-display');
-            if (nameDisplay && nameDisplay.textContent) {
-                textContent += nameDisplay.textContent + '\n\n';
-            }
-            
-            // Process each group in the summary
-            const groups = tempDiv.querySelectorAll('h3');
-            groups.forEach(group => {
-                textContent += group.textContent + '\n';
-                
-                // Find the list that follows this group header
-                let list = group.nextElementSibling;
-                if (list && list.tagName === 'UL') {
-                    // Process each list item
-                    const items = list.querySelectorAll('li');
-                    items.forEach(item => {
-                        // Clean up the text (remove HTML tags)
-                        const cleanText = item.textContent.replace(/<[^>]*>/g, '');
-                        textContent += '- ' + cleanText + '\n';
-                    });
-                }
-                textContent += '\n';
-            });
-            
-            const copyButton = document.querySelector('.copy-button');
-            const originalText = copyButton.textContent;
-            
-            // Use the same safe approach for copying as before
-            try {
-                // Create a temporary textarea element
-                const textarea = document.createElement('textarea');
-                textarea.value = textContent;
-                textarea.style.position = 'absolute';
-                textarea.style.left = '-9999px';
-                textarea.style.top = '0';
-                document.body.appendChild(textarea);
-                
-                // Select the text and copy it
-                textarea.select();
-                let successful = document.execCommand('copy');
-                document.body.removeChild(textarea);
-                
-                // Provide visual feedback
-                if (successful) {
-                    copyButton.textContent = 'Copied!';
-                    copyButton.style.backgroundColor = '#27ae60';
-                    
-                    // Reset after 2 seconds
-                    setTimeout(() => {
-                        copyButton.textContent = originalText;
-                        copyButton.style.backgroundColor = '';
-                    }, 2000);
-                } else {
-                    throw new Error('Copy command was unsuccessful');
-                }
-            } catch (err) {
-                console.error('Failed to copy character summary: ', err);
-                // Fallback to the clipboard API if execCommand failed
-                if (navigator.clipboard) {
-                    navigator.clipboard.writeText(textContent)
-                        .then(() => {
-                            copyButton.textContent = 'Copied!';
-                            copyButton.style.backgroundColor = '#27ae60';
-                            
-                            // Reset after 2 seconds
-                            setTimeout(() => {
-                                copyButton.textContent = originalText;
-                                copyButton.style.backgroundColor = '';
-                            }, 2000);
-                        })
-                        .catch(err => {
-                            console.error('Clipboard API failed too: ', err);
-                            alert('Could not copy text. Please try again or copy manually.');
-                            copyButton.textContent = 'Failed!';
-                            copyButton.style.backgroundColor = '#e74c3c';
-                            
-                            // Reset after 2 seconds
-                            setTimeout(() => {
-                                copyButton.textContent = originalText;
-                                copyButton.style.backgroundColor = '';
-                            }, 2000);
-                        });
-                } else {
-                    alert('Could not copy text. Please copy manually.');
-                }
-            }
-        }
-        
         // Toggle random character generation
         function toggleRandomGeneration() {
             // Check if character is complete (all 4 groups are completed)
@@ -2477,6 +1438,14 @@
                 button.textContent = "Auto-Random";
                 button.classList.remove('active');
                 stopRandomGeneration();
+            }
+        }
+        
+        // Stop random generation by clearing the timer
+        function stopRandomGeneration() {
+            if (randomTimer) {
+                clearTimeout(randomTimer);
+                randomTimer = null;
             }
         }
         
@@ -3724,6 +2693,408 @@
             }
             
             // ...existing code...
+        }
+
+        // Clear rule effects before each selection to avoid cumulative effects
+        function clearRuleEffects() {
+            // Clear disabled parameters
+            document.querySelectorAll('.disabled-parameter').forEach(elem => {
+                elem.classList.remove('disabled-parameter');
+                elem.style.opacity = '';
+            });
+            
+            // Show previously hidden options
+            document.querySelectorAll('.option.hidden-by-rule').forEach(option => {
+                option.style.display = ''; // Reset to default display value
+                option.classList.remove('hidden-by-rule');
+            });
+            
+            // Clear disabled options that weren't hidden
+            document.querySelectorAll('.option.disabled').forEach(option => {
+                option.classList.remove('disabled');
+                option.style.opacity = '';
+                option.style.cursor = 'pointer';
+                
+                // Restore original click handler if it exists
+                if (option.dataset.originalOnclick) {
+                    // Handle function restoration properly
+                    const paramId = option.closest('.parameter').id.split('-')[1];
+                    const optionIndex = Array.from(option.parentNode.children).indexOf(option);
+                    
+                    // Recreate proper click handling
+                    option.onclick = function() {
+                        selectOption(parseInt(paramId), optionIndex);
+                    };
+                }
+            });
+            
+            // Clear suggestions
+            document.querySelectorAll('.option.suggested').forEach(option => {
+                option.classList.remove('suggested');
+                option.style.borderLeft = '';
+                
+                // Remove suggestion indicator
+                const indicator = option.querySelector('.suggestion-indicator');
+                if (indicator) {
+                    option.removeChild(indicator);
+                }
+            });
+            
+            // Clear gender suggestions
+            document.querySelectorAll('.option.suggested-gender').forEach(option => {
+                option.classList.remove('suggested-gender');
+                option.style.borderRight = '';
+                
+                // Remove gender match indicator
+                const indicator = option.querySelector('.gender-match-indicator');
+                if (indicator) {
+                    option.removeChild(indicator);
+                }
+            });
+            
+            // Clear suggestion messages
+            document.querySelectorAll('.suggestion-message').forEach(msg => {
+                msg.parentNode.removeChild(msg);
+            });
+        }
+
+        // Apply all rules based on current selections
+        function applyAllRules() {
+            // Clear all rule effects first
+            clearRuleEffects();
+            
+            // Apply rules for each selected parameter
+            Object.entries(selections).forEach(([paramId, selection]) => {
+                paramId = parseInt(paramId);
+                
+                if (typeof selection === 'object') {
+                    // Handle Hair Color variants
+                    applyRules(paramId, selection.mainColorIndex, selection.variantIndex);
+                } else {
+                    // Standard parameter
+                    applyRules(paramId, selection);
+                }
+            });
+        }
+
+        // Apply all rules but ensure completed groups remain accessible
+        function applyAllRulesWithCompletedGroups() {
+            // First clear all rule effects
+            clearRuleEffects();
+            
+            // Apply rules for each selected parameter
+            Object.entries(selections).forEach(([paramId, selection]) => {
+                paramId = parseInt(paramId);
+                
+                if (typeof selection === 'object') {
+                    // Handle Hair Color variants
+                    applyRules(paramId, selection.mainColorIndex, selection.variantIndex);
+                } else {
+                    // Standard parameter
+                    applyRules(paramId, selection);
+                }
+            });
+            
+            // Now re-enable parameters in completed groups
+            for (let groupNum = 1; groupNum <= 4; groupNum++) {
+                const groupButton = document.getElementById(`group-${groupNum}`);
+                
+                if (groupButton && groupButton.classList.contains('completed')) {
+                    // This group is completed, make sure its parameters are enabled
+                    const group = taxonomyData[groupNum];
+                    if (group && group.parameters) {
+                        group.parameters.forEach(param => {
+                            const paramElement = document.getElementById(`parameter-${param.id}`);
+                            if (paramElement) {
+                                paramElement.classList.remove('disabled-parameter');
+                                paramElement.style.opacity = '';
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        // Apply rules based on parameter selection
+        function applyRules(paramId, optionIndex, variantIndex) {
+            const groupNum = paramGroups[paramId];
+            if (!groupNum) return;
+            
+            const parameter = taxonomyData[groupNum].parameters.find(p => p.id === paramId);
+            if (!parameter) return;
+            
+            // Get option name (handling Hair Color with variants specially)
+            let optionName;
+            if (parameter.name === "Hair Color" && variantIndex !== undefined) {
+                const mainOption = parameter.options[optionIndex];
+                optionName = mainOption.variants[variantIndex].name;
+            } else {
+                optionName = parameter.options[optionIndex].name;
+            }
+            
+            console.log(`Applying rules for ${parameter.name} = "${optionName}"`);
+            
+            // Apply absolute rules first
+            const applicableAbsoluteRules = rules.absoluteRules.filter(rule => 
+                rule.condition.paramId === paramId && rule.condition.optionName === optionName);
+            applicableAbsoluteRules.forEach(rule => {
+                console.log(`Applying absolute rule: ${parameter.name} = "${optionName}"`);
+                rule.actions.forEach(action => {
+                    applyRuleAction(action);
+                });
+            });
+            
+            // Then apply suggestive rules
+            const applicableSuggestiveRules = rules.suggestiveRules.filter(rule => 
+                rule.condition.paramId === paramId && rule.condition.optionName === optionName);
+            applicableSuggestiveRules.forEach(rule => {
+                console.log(`Applying suggestive rule: ${parameter.name} = "${optionName}"`);
+                rule.suggestions.forEach(suggestion => {
+                    applySuggestion(suggestion);
+                });
+            });
+        }
+
+        // Apply a specific rule action
+        function applyRuleAction(action) {
+            console.log(`Applying action type: ${action.type} for parameter ${action.paramName}`);
+            switch (action.type) {
+                case 'disable':
+                    if (action.disabledOptions) {
+                        disableParameterOptions(action.paramId, action.disabledOptions);
+                    } else {
+                        disableParameter(action.paramId);
+                    }
+                    break;
+                    
+                case 'limit':
+                case 'disableExcept':
+                    limitParameterOptions(action.paramId, action.allowedOptions);
+                    break;
+            }
+        }
+
+        // Apply a suggestion
+        function applySuggestion(suggestion) {
+            console.log(`Suggesting options for parameter ${suggestion.paramName}`);
+            suggestOptions(suggestion.paramId, suggestion.suggestedOptions);
+        }
+
+        // Disable an entire parameter
+        function disableParameter(paramId) {
+            const paramElement = document.getElementById(`parameter-${paramId}`);
+            if (paramElement) {
+                paramElement.classList.add('disabled-parameter');
+                paramElement.style.opacity = '0.5';
+            }
+        }
+
+        // Disable specific options within a parameter
+        function disableParameterOptions(paramId, optionNames) {
+            const paramElement = document.getElementById(`parameter-${paramId}`);
+            if (!paramElement) return;
+            
+            const options = paramElement.querySelectorAll('.option');
+            options.forEach(option => {
+                const optionLabel = option.querySelector('.option-label');
+                if (optionLabel) {
+                    const optionName = optionLabel.textContent;
+                    
+                    // Check if this option should be disabled
+                    if (optionNames.some(name => optionName.includes(name))) {
+                        option.classList.add('disabled');
+                        option.style.opacity = '0.5';
+                        option.style.cursor = 'not-allowed';
+                        
+                        // Save original click handler
+                        if (option.onclick) {
+                            option.dataset.originalOnclick = true;
+                        }
+                        
+                        // Replace with warning handler
+                        option.onclick = () => showRuleWarning(paramId);
+                    }
+                }
+            });
+        }
+
+        // Limit available options (disabling all except the allowed ones)
+        function limitParameterOptions(paramId, allowedOptionNames) {
+            const paramElement = document.getElementById(`parameter-${paramId}`);
+            if (!paramElement) return;
+            
+            const options = paramElement.querySelectorAll('.option');
+            options.forEach(option => {
+                const optionLabel = option.querySelector('.option-label');
+                if (optionLabel) {
+                    const optionName = optionLabel.textContent;
+                    
+                    // Check if this option should be enabled or disabled
+                    let isAllowed = false;
+                    for (const allowedName of allowedOptionNames) {
+                        if (optionName.includes(allowedName)) {
+                            isAllowed = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!isAllowed) {
+                        option.classList.add('disabled');
+                        option.style.opacity = '0.5';
+                        option.style.cursor = 'not-allowed';
+                        
+                        // Save original click handler
+                        if (option.onclick) {
+                            option.dataset.originalOnclick = true;
+                        }
+                        
+                        // Replace with warning handler
+                        option.onclick = () => showRuleWarning(paramId);
+                    }
+                }
+            });
+        }
+
+        // Suggest options
+        function suggestOptions(paramId, suggestedOptionNames) {
+            const paramElement = document.getElementById(`parameter-${paramId}`);
+            if (!paramElement) return;
+            
+            // Add a suggestion message
+            if (suggestedOptionNames.length > 0) {
+                const msgExists = paramElement.querySelector('.suggestion-message');
+                if (!msgExists) {
+                    const msg = document.createElement('div');
+                    msg.className = 'suggestion-message';
+                    msg.style.padding = '10px';
+                    msg.style.marginBottom = '15px';
+                    msg.style.backgroundColor = '#e8f7ff';
+                    msg.style.border = '1px solid #b3e0ff';
+                    msg.style.borderRadius = '4px';
+                    msg.innerHTML = '<strong>Suggested options:</strong> Based on your previous selections, these options are recommended.';
+                    
+                    // Insert after the parameter description
+                    const desc = paramElement.querySelector('.parameter-description');
+                    if (desc && desc.nextSibling) {
+                        paramElement.insertBefore(msg, desc.nextSibling);
+                    }
+                }
+            }
+            
+            const options = paramElement.querySelectorAll('.option');
+            options.forEach(option => {
+                const optionLabel = option.querySelector('.option-label');
+                if (optionLabel) {
+                    const optionName = optionLabel.textContent;
+                    
+                    // Check if this option is suggested
+                    for (const suggestedName of suggestedOptionNames) {
+                        if (optionName.includes(suggestedName)) {
+                            option.classList.add('suggested');
+                            option.style.borderLeft = '4px solid #3498db';
+                            
+                            // Add suggestion indicator if it doesn't exist
+                            if (!option.querySelector('.suggestion-indicator')) {
+                                const indicator = document.createElement('div');
+                                indicator.className = 'suggestion-indicator';
+                                indicator.style.position = 'absolute';
+                                indicator.style.top = '10px';
+                                indicator.style.right = '10px';
+                                indicator.style.backgroundColor = '#3498db';
+                                indicator.style.color = 'white';
+                                indicator.style.borderRadius = '3px';
+                                indicator.style.padding = '2px 6px';
+                                indicator.style.fontSize = '12px';
+                                indicator.textContent = 'Suggested';
+                                
+                                option.style.position = 'relative';
+                                option.appendChild(indicator);
+                            }
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Show a warning when trying to select a disabled option
+        function showRuleWarning(paramId) {
+            // Find the rule that caused this parameter to be disabled
+            const disablingRules = rules.absoluteRules.filter(rule => 
+                rule.actions.some(action => action.paramId === paramId)
+            );
+            
+            let message = "This option is not available due to your current selections:";
+            disablingRules.forEach(rule => {
+                message += `\n- ${rule.condition.paramName} = "${rule.condition.optionName}"`;
+            });
+            
+            message += "\n\nPlease change those selections first if you want to use this option.";
+            alert(message);
+        }
+
+        // Handle facial hair visibility based on gender
+        function handleFacialHairVisibility(isFemale) {
+            // Hide facial hair options for female characters
+            const facialHairParams = [28, 29, 30, 31, 32, 33]; // IDs for facial hair parameters
+            
+            facialHairParams.forEach(paramId => {
+                const paramElement = document.getElementById(`parameter-${paramId}`);
+                if (paramElement) {
+                    if (isFemale) {
+                        paramElement.classList.add('gender-hidden');
+                    } else {
+                        paramElement.classList.remove('gender-hidden');
+                    }
+                }
+            });
+        }
+
+        // Copy character data to clipboard
+        function copyCharacter() {
+            if (Object.keys(completedParams).length === 0) {
+                alert('Please create a character first by selecting parameters.');
+                return;
+            }
+            
+            try {
+                // Create JSON data
+                const characterData = {
+                    name: document.getElementById('character-name-display').textContent || "Unnamed Character",
+                    selections: selections,
+                    completedParams: completedParams,
+                    modifierSelections: modifierSelections,
+                    version: "1.0" // For future compatibility
+                };
+                
+                // Copy to clipboard
+                const jsonString = JSON.stringify(characterData, null, 2);
+                if (navigator.clipboard) {
+                    navigator.clipboard.writeText(jsonString)
+                        .then(() => {
+                            showNotification("Character data copied to clipboard!");
+                        })
+                        .catch(err => {
+                            console.error('Clipboard API failed: ', err);
+                            fallbackCopy(jsonString);
+                        });
+                } else {
+                    fallbackCopy(jsonString);
+                }
+            } catch (err) {
+                console.error('Error copying character data:', err);
+                showNotification("Error copying character data!", true);
+            }
+        }
+
+        // Generate a composed prompt from the character
+        function generateComposedPrompt() {
+            if (Object.keys(completedParams).length === 0) {
+                alert('Please create a character first by selecting parameters.');
+                return '';
+            }
+            
+            return PromptGenerator.generateNaturalLanguageDescription(completedParams, taxonomyData);
         }
     </script>
 </body>
