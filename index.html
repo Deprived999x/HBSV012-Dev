@@ -1111,6 +1111,209 @@
             return paramElement;
         }
         
+        // Select an option for a parameter
+        function selectOption(paramId, optionIndex, variantIndex) {
+            // Get all options for this parameter
+            const options = document.getElementById(`options-${paramId}`).querySelectorAll('.option');
+            
+            // Remove 'selected' class from all options
+            for (let i = 0; i < options.length; i++) {
+                options[i].classList.remove('selected');
+            }
+            
+            // For Hair Color, we need to find the correct option by calculating its position
+            const groupNum = paramGroups[paramId];
+            const parameter = taxonomyData[groupNum].parameters.find(p => p.id === paramId);
+            
+            let selectedOptionElement;
+            if (parameter.name === "Hair Color" && variantIndex !== undefined) {
+                // Find the correct option by counting
+                let optionCount = 0;
+                for (let i = 0; i < optionIndex; i++) {
+                    if (parameter.options[i].variants) {
+                        optionCount += parameter.options[i].variants.length;
+                    } else {
+                        optionCount++;
+                    }
+                }
+                selectedOptionElement = options[optionCount + variantIndex];
+                // Store both main color and variant
+                selections[paramId] = {
+                    mainColorIndex: optionIndex,
+                    variantIndex: variantIndex
+                };
+            } else {
+                // Standard option selection
+                selectedOptionElement = options[optionIndex];
+                selections[paramId] = optionIndex;
+            }
+            
+            // Add 'selected' class to the chosen option
+            if (selectedOptionElement) {
+                selectedOptionElement.classList.add('selected');
+            }
+            
+            // Special handling when gender is selected
+            if (paramId === 1) {
+                // Clear any previously applied gender suggestions
+                document.querySelectorAll('.option.suggested-gender').forEach(option => {
+                    option.classList.remove('suggested-gender');
+                    option.style.borderRight = '';
+                    
+                    const indicator = option.querySelector('.gender-match-indicator');
+                    if (indicator) {
+                        option.removeChild(indicator);
+                    }
+                });
+                
+                // Hide or show facial hair parameter based on gender
+                const selectedGender = parameter.options[optionIndex].name.toLowerCase();
+                handleFacialHairVisibility(selectedGender.includes('female'));
+            }
+            
+            // Apply rules after selection
+            clearRuleEffects(); // Clear existing rule effects
+            applyRules(paramId, optionIndex, variantIndex);
+            
+            // Update character summary
+            updateCharacterSummary();
+        }
+
+        // Add function to select modifiers
+        function selectModifier(paramId, modifierName, optionIndex) {
+            // Initialize if doesn't exist yet
+            if (!modifierSelections[paramId]) {
+                modifierSelections[paramId] = {};
+            }
+            
+            const modifierElement = Array.from(document.getElementById(`options-${paramId}`).querySelectorAll('.modifier'))
+                .find(mod => mod.querySelector('.modifier-name').textContent === modifierName);
+            if (!modifierElement) return;
+            
+            // Get all modifier options
+            const modOptions = modifierElement.querySelectorAll('.modifier-option');
+            
+            // Remove 'selected' class from all options
+            for (let i = 0; i < modOptions.length; i++) {
+                modOptions[i].classList.remove('selected');
+            }
+            
+            // Add 'selected' class to the chosen option
+            modOptions[optionIndex].classList.add('selected');
+            
+            // Store the selection
+            modifierSelections[paramId][modifierName] = optionIndex;
+            
+            // Update character summary
+            updateCharacterSummary();
+        }
+
+        // Edit a parameter that was already completed
+        function editParameter(paramId) {
+            const groupNum = paramGroups[paramId];
+            
+            // Hide all parameters in this group
+            taxonomyData[groupNum].parameters.forEach(param => {
+                document.getElementById(`parameter-${param.id}`).classList.add('hidden');
+            });
+            
+            // Show the parameter to edit
+            const paramElement = document.getElementById(`parameter-${paramId}`);
+            paramElement.classList.remove('hidden');
+            
+            // Remove the disabled-parameter class if it exists when editing
+            if (paramElement.classList.contains('disabled-parameter')) {
+                paramElement.classList.remove('disabled-parameter');
+                paramElement.style.opacity = '';
+                
+                // Also re-enable all options when editing a previously disabled parameter
+                const options = paramElement.querySelectorAll('.option');
+                options.forEach(option => {
+                    option.classList.remove('disabled');
+                    option.style.opacity = '';
+                    option.style.cursor = 'pointer';
+                    
+                    // Restore click handlers
+                    const paramObj = taxonomyData[groupNum].parameters.find(p => p.id === paramId);
+                    if (paramObj && paramObj.name === "Hair Color") {
+                        // Special handling for Hair Color with variants
+                        // This is more complex and would need to restore variant handlers
+                    } else {
+                        // For standard parameters
+                        const optionIndex = Array.from(option.parentNode.children).indexOf(option);
+                        option.onclick = () => selectOption(paramId, optionIndex);
+                    }
+                });
+                
+                // Re-enable the next button
+                const nextButton = paramElement.querySelector('.next-button');
+                if (nextButton) {
+                    nextButton.disabled = false;
+                    nextButton.style.opacity = '';
+                    nextButton.style.cursor = 'pointer';
+                }
+            }
+            
+            // Make sure group is expanded
+            if (!document.getElementById(`content-${groupNum}`).classList.contains('active')) {
+                toggleGroup(groupNum);
+            }
+            
+            // Re-select the previously selected option
+            if (selections[paramId] !== undefined) {
+                if (typeof selections[paramId] === 'object') {
+                    // For Hair Color with variants
+                    selectOption(paramId, selections[paramId].mainColorIndex, selections[paramId].variantIndex);
+                } else {
+                    // For standard options
+                    selectOption(paramId, selections[paramId]);
+                }
+            }
+            
+            // Re-select modifiers
+            if (modifierSelections[paramId]) {
+                Object.entries(modifierSelections[paramId]).forEach(([modifierName, optionIndex]) => {
+                    const modifierContainer = document.getElementById(`options-${paramId}`);
+                    const modifierSection = Array.from(modifierContainer.querySelectorAll('.modifier')).find(
+                        el => el.querySelector('.modifier-name').textContent === modifierName
+                    );
+                    
+                    if (modifierSection) {
+                        const modOptions = modifierSection.querySelectorAll('.modifier-option');
+                        if (modOptions.length > optionIndex) {
+                            modOptions[optionIndex].classList.add('selected');
+                        }
+                    }
+                });
+            }
+            
+            // Apply all rules after re-editing - but ensure we can still edit this parameter
+            setTimeout(() => {
+                // We need to make sure rules don't re-disable the parameter we're editing
+                applyAllRules();
+                
+                // Force this parameter to be editable even if rules would disable it
+                paramElement.classList.remove('disabled-parameter');
+                paramElement.style.opacity = '';
+                
+                // Also ensure options and next button remain enabled
+                paramElement.querySelectorAll('.option').forEach(option => {
+                    if (option.classList.contains('selected')) {
+                        option.classList.remove('disabled');
+                        option.style.opacity = '';
+                        option.style.cursor = 'pointer';
+                    }
+                });
+                
+                const nextButton = paramElement.querySelector('.next-button');
+                if (nextButton) {
+                    nextButton.disabled = false;
+                    nextButton.style.opacity = '';
+                    nextButton.style.cursor = 'pointer';
+                }
+            }, 200);
+        }
+        
         // Toggle group expansion - modified to allow completed groups to always be toggled
         function toggleGroup(groupNum) {
             // Only prevent toggling groups marked as inactive AND not completed
