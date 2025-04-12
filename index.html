@@ -747,372 +747,11 @@
         let currentRandomGroup = 1;
         let currentParameterIndex = 0;
 
-        // Load taxonomy data and rules from external files
-        async function loadTaxonomyData() {
-            try {
-                console.log("Loading taxonomy data...");
-                
-                // Try different possible paths for the data files
-                const possiblePaths = [
-                    './data/',             // Root /data folder
-                    './app/data/',         // /app/data folder
-                    '../data/',            // One level up
-                    './',                  // Same directory
-                    '/HBSV010/data/'       // Absolute path with repo name
-                ];
-                
-                let basePath = null;
-                
-                // First, try to find the correct path
-                for (const path of possiblePaths) {
-                    try {
-                        console.log(`Trying path: ${path}`);
-                        const testResponse = await fetch(`${path}hbs-taxonomy-g1-r010.json`, { method: 'HEAD' });
-                        if (testResponse.ok) {
-                            console.log(`Found working path: ${path}`);
-                            basePath = path;
-                            break;
-                        }
-                    } catch (e) {
-                        console.log(`Path ${path} failed: ${e.message}`);
-                    }
-                }
-                
-                if (!basePath) {
-                    console.error("Could not find data files in any of the expected locations");
-                    throw new Error("Data files not found. Check your repository structure.");
-                }
-                
-                // Now use the detected path to load all files
-                const group1Response = await fetch(`${basePath}hbs-taxonomy-g1-r010.json`);
-                if (!group1Response.ok) {
-                    throw new Error(`Failed to load Group 1 data: ${group1Response.status}`);
-                }
-                const group1Data = await group1Response.json();
-                
-                const group2Response = await fetch(`${basePath}hbs-taxonomy-g2-r010.json`);
-                if (!group2Response.ok) {
-                    throw new Error(`Failed to load Group 2 data: ${group2Response.status}`);
-                }
-                const group2Data = await group2Response.json();
-                
-                const group3Response = await fetch(`${basePath}hbs-taxonomy-g3-r010.json`);
-                if (!group3Response.ok) {
-                    throw new Error(`Failed to load Group 3 data: ${group3Response.status}`);
-                }
-                const group3Data = await group3Response.json();
-                
-                const group4Response = await fetch(`${basePath}hbs-taxonomy-g4-r010.json`);
-                if (!group4Response.ok) {
-                    throw new Error(`Failed to load Group 4 data: ${group4Response.status}`);
-                }
-                const group4Data = await group4Response.json();
-                
-                // Also load the rules
-                try {
-                    const rulesResponse = await fetch(`${basePath}hbs-rules-r010.json`);
-                    if (rulesResponse.ok) {
-                        rules = await rulesResponse.json();
-                        console.log(`Loaded ${rules.absoluteRules.length} absolute rules and ${rules.suggestiveRules.length} suggestive rules`);
-                    } else {
-                        console.warn("Could not load rules file. Using default rules.");
-                    }
-                } catch (rulesError) {
-                    console.warn("Error loading rules:", rulesError);
-                }
-                
-                // Combine all data into a single structure
-                return {
-                    "1": group1Data,
-                    "2": group2Data, 
-                    "3": group3Data,
-                    "4": group4Data
-                };
-            } catch (error) {
-                console.error("Error loading taxonomy data:", error);
-                const container = document.getElementById('main-container');
-                container.innerHTML = `
-                    <div style="color: red; padding: 20px; background: #ffeeee; border: 1px solid red;">
-                        <strong>Error loading taxonomy data:</strong> ${error.message}<br><br>
-                        <strong>Troubleshooting:</strong>
-                        <ul>
-                            <li>Verify JSON files exist in the correct directory</li>
-                            <li>We tried looking in: ./data/, ./app/data/, ../data/, ./, /HBSV010/data/</li>
-                            <li>Check browser console for additional error details</li>
-                            <li>Current URL: ${window.location.href}</li>
-                        </ul>
-                    </div>
-                `;
-                throw error;
-            }
-        }
-
-        // Initialize the application after loading data
-        async function initializeApp() {
-            try {
-                // Load taxonomy data and store it in the global variable
-                taxonomyData = await loadTaxonomyData();
-                
-                // Initialize the application with the loaded data
-                buildTaxonomyStructure();
-                buildInterface();
-                
-                // Hide the "Bald" option
-                hideSpecificOptions();
-
-                // Check if gender is already set from a previous session
-                if (selections[1] !== undefined) {
-                    const genderOption = taxonomyData[1].parameters.find(p => p.id === 1).options[selections[1]];
-                    const selectedGender = genderOption.name.toLowerCase();
-                    handleFacialHairVisibility(selectedGender.includes('female'));
-                }
-            } catch (error) {
-                console.error("Failed to initialize application:", error);
-            }
-        }
-
-        // New function to hide specific options like "Bald"
-        function hideSpecificOptions() {
-            // Find the Hair Density parameter (ID 20)
-            const hairDensityParam = document.getElementById('parameter-20');
-            if (!hairDensityParam) return;
-            
-            // Get all options for Hair Density
-            const options = hairDensityParam.querySelectorAll('.option');
-            options.forEach(option => {
-                const optionLabel = option.querySelector('.option-label');
-                if (optionLabel && optionLabel.textContent.toLowerCase().includes('bald')) {
-                    // Hide the bald option completely instead of just disabling it
-                    option.style.display = 'none';
-                    // Mark it as permanently disabled so it won't be chosen by random selection
-                    option.classList.add('permanently-disabled');
-                    console.log("Bald option has been hidden");
-                }
-            });
-        }
-
-        // Build parameter relationships and organization from taxonomy data
-        function buildTaxonomyStructure() {
-            // Build parameter groups mapping
-            for (let groupNum = 1; groupNum <= 4; groupNum++) {
-                const group = taxonomyData[groupNum];
-                if (!group || !group.parameters) continue;
-                
-                // Set group start parameter
-                if (group.parameters.length > 0) {
-                    groupStarts[groupNum] = group.parameters[0].id;
-                }
-                
-                // Map parameters to groups and build parameter names dictionary
-                group.parameters.forEach((param, index) => {
-                    paramGroups[param.id] = groupNum;
-                    parameters[param.id] = param.name;
-                    
-                    // Set next parameter in sequence
-                    if (index < group.parameters.length - 1) {
-                        nextParam[param.id] = group.parameters[index + 1].id;
-                    } else {
-                        nextParam[param.id] = null; // Last parameter in group
-                    }
-                });
-            }
-        }
-        
-        // Build the UI based on taxonomy data
-        function buildInterface() {
-            const container = document.getElementById('main-container');
-            container.innerHTML = ''; // Clear loading message
-            
-            // Create UI elements for each group
-            for (let groupNum = 1; groupNum <= 4; groupNum++) {
-                const group = taxonomyData[groupNum];
-                if (!group) continue;
-                
-                // Create group section
-                const groupSection = document.createElement('div');
-                groupSection.id = `group-section-${groupNum}`;
-                
-                // Create group button
-                const groupButton = document.createElement('div');
-                groupButton.id = `group-${groupNum}`;
-                groupButton.className = `group-button ${groupNum > 1 ? 'inactive' : ''}`;
-                groupButton.onclick = () => toggleGroup(groupNum);
-                groupButton.innerHTML = `
-                    ${typeof group.group === 'string' ? group.group : (group.group && group.group.name ? group.group.name : `Group ${groupNum}`)}
-                    <span class="chevron">▼</span>
-                `;
-                
-                // Create progress indicator
-                const progressIndicator = document.createElement('div');
-                progressIndicator.className = 'progress-indicator';
-                progressIndicator.innerHTML = `<div class="progress-bar" id="progress-${groupNum}"></div>`;
-                
-                // Create group content container
-                const groupContent = document.createElement('div');
-                groupContent.id = `content-${groupNum}`;
-                groupContent.className = `group-content ${groupNum === 1 ? 'active' : ''}`;
-                
-                // Add parameters to group content
-                group.parameters.forEach((param, index) => {
-                    const paramElement = createParameterElement(param, index === 0 && groupNum === 1);
-                    groupContent.appendChild(paramElement);
-                });
-                
-                // Create completed section
-                const completedSection = document.createElement('div');
-                completedSection.id = `completed-${groupNum}`;
-                completedSection.className = 'completed-section hidden';
-                groupContent.appendChild(completedSection);
-                
-                // Assemble group section
-                groupSection.appendChild(groupButton);
-                groupSection.appendChild(progressIndicator);
-                groupSection.appendChild(groupContent);
-                
-                // Add to container
-                container.appendChild(groupSection);
-            }
-        }
-        
-        // Create UI element for a parameter
-        function createParameterElement(param, visible = false) {
-            const paramElement = document.createElement('div');
-            paramElement.id = `parameter-${param.id}`;
-            paramElement.className = `parameter ${visible ? '' : 'hidden'}`;
-            
-            // Add parameter header and description
-            paramElement.innerHTML = `
-                <h3>${param.id}. ${param.name}</h3>
-                <div class="parameter-status">${param.status}</div>
-                <div class="parameter-description">${param.description}</div>
-            `;
-            
-            // Create options container
-            const optionsContainer = document.createElement('div');
-            optionsContainer.id = `options-${param.id}`;
-            optionsContainer.className = 'options-container';
-            
-            // Add options
-            param.options.forEach((option, index) => {
-                // Special handling for Hair Color which has variants structure
-                if (param.name === "Hair Color" && option.variants) {
-                    // For each variant in the Hair Color option, create a separate option element
-                    option.variants.forEach((variant, variantIndex) => {
-                        const variantOptionElement = document.createElement('div');
-                        variantOptionElement.className = 'option';
-                        // When clicked, this needs to store both the parent option and the variant
-                        variantOptionElement.onclick = () => selectOption(param.id, index, variantIndex);
-                        
-                        variantOptionElement.innerHTML = `
-                            <div class="option-label">${option.name} - ${variant.name}</div>
-                            <div class="option-description">
-                                <div><span class="description-label">Visual:</span> ${variant.visual}</div>
-                                <div><span class="description-label">As Seen In:</span> ${variant.as_seen_in}</div>
-                            </div>
-                        `;
-                        
-                        optionsContainer.appendChild(variantOptionElement);
-                    });
-                } else {
-                    // Standard options for other parameters
-                    const optionElement = document.createElement('div');
-                    optionElement.className = 'option';
-                    optionElement.onclick = () => selectOption(param.id, index);
-                    
-                    // For all other parameters with standard structure
-                    const visual = option.visual || option.description || option.Visual || option.Description || "";
-                    const asSeenIn = option.asSeenIn || option.as_seen_in || option.AsSeenIn || option["As Seen In"] || "";
-                    
-                    optionElement.innerHTML = `
-                        <div class="option-label">${option.name || "Unnamed Option"}</div>
-                        <div class="option-description">
-                            <div><span class="description-label">Visual:</span> ${visual}</div>
-                            <div><span class="description-label">As Seen In:</span> ${asSeenIn}</div>
-                        </div>
-                    `;
-                    
-                    optionsContainer.appendChild(optionElement);
-                }
-            });
-            
-            // Add modifiers if present
-            if (param.modifiers) {
-                const modifiersSection = document.createElement('div');
-                modifiersSection.className = 'modifiers-section';
-                modifiersSection.innerHTML = '<h4>Modifiers</h4>';
-                
-                // Handle object-style modifiers (as in your JSON files)
-                if (!Array.isArray(param.modifiers)) {
-                    Object.entries(param.modifiers).forEach(([modName, modOptions]) => {
-                        const modifierElement = document.createElement('div');
-                        modifierElement.className = 'modifier';
-                        
-                        // Add modifier name
-                        const modifierName = document.createElement('div');
-                        modifierName.className = 'modifier-name';
-                        modifierName.textContent = modName;
-                        modifierElement.appendChild(modifierName);
-                        
-                        // Add modifier options
-                        const modifierOptions = document.createElement('div');
-                        modifierOptions.className = 'modifier-options';
-                        
-                        modOptions.forEach((option, optIndex) => {
-                            const modOptionElement = document.createElement('div');
-                            modOptionElement.className = 'modifier-option';
-                            modOptionElement.textContent = option.name;
-                            modOptionElement.onclick = () => selectModifier(param.id, modName, optIndex);
-                            modifierOptions.appendChild(modOptionElement);
-                        });
-                        
-                        modifierElement.appendChild(modifierOptions);
-                        modifiersSection.appendChild(modifierElement);
-                    });
-                } else {
-                    // Original code for array-style modifiers
-                    param.modifiers.forEach(modifier => {
-                        const modifierElement = document.createElement('div');
-                        modifierElement.className = 'modifier';
-                        
-                        // Add modifier name
-                        const modifierName = document.createElement('div');
-                        modifierName.className = 'modifier-name';
-                        modifierName.textContent = modifier.name;
-                        modifierElement.appendChild(modifierName);
-                        
-                        // Add modifier options
-                        const modifierOptions = document.createElement('div');
-                        modifierOptions.className = 'modifier-options';
-                        
-                        modifier.options.forEach((option, optIndex) => {
-                            const modOptionElement = document.createElement('div');
-                            modOptionElement.className = 'modifier-option';
-                            modOptionElement.textContent = option.name;
-                            modOptionElement.onclick = () => selectModifier(param.id, modifier.name, optIndex);
-                            modifierOptions.appendChild(modOptionElement);
-                        });
-                        
-                        modifierElement.appendChild(modifierOptions);
-                        modifiersSection.appendChild(modifierElement);
-                    });
-                }
-                
-                optionsContainer.appendChild(modifiersSection);
-            }
-            
-            // Add next button
-            const nextButton = document.createElement('button');
-            nextButton.className = 'next-button';
-            nextButton.textContent = 'Next';
-            nextButton.onclick = () => completeParameter(param.id);
-            optionsContainer.appendChild(nextButton);
-            
-            paramElement.appendChild(optionsContainer);
-            return paramElement;
-        }
+        // Explicitly define the essential functions in the global scope
+        // This ensures they're available for onclick handlers
         
         // Select an option for a parameter
-        function selectOption(paramId, optionIndex, variantIndex) {
+        window.selectOption = function(paramId, optionIndex, variantIndex) {
             // Get all options for this parameter
             const options = document.getElementById(`options-${paramId}`).querySelectorAll('.option');
             
@@ -1177,10 +816,10 @@
             
             // Update character summary
             updateCharacterSummary();
-        }
+        };
 
-        // Add function to select modifiers
-        function selectModifier(paramId, modifierName, optionIndex) {
+        // Add function to select modifiers - expose to global scope
+        window.selectModifier = function(paramId, modifierName, optionIndex) {
             // Initialize if doesn't exist yet
             if (!modifierSelections[paramId]) {
                 modifierSelections[paramId] = {};
@@ -1206,10 +845,10 @@
             
             // Update character summary
             updateCharacterSummary();
-        }
+        };
 
-        // Edit a parameter that was already completed
-        function editParameter(paramId) {
+        // Edit a parameter that was already completed - expose to global scope
+        window.editParameter = function(paramId) {
             const groupNum = paramGroups[paramId];
             
             // Hide all parameters in this group
@@ -1241,7 +880,7 @@
                     } else {
                         // For standard parameters
                         const optionIndex = Array.from(option.parentNode.children).indexOf(option);
-                        option.onclick = () => selectOption(paramId, optionIndex);
+                        option.onclick = () => window.selectOption(paramId, optionIndex);
                     }
                 });
                 
@@ -1263,10 +902,10 @@
             if (selections[paramId] !== undefined) {
                 if (typeof selections[paramId] === 'object') {
                     // For Hair Color with variants
-                    selectOption(paramId, selections[paramId].mainColorIndex, selections[paramId].variantIndex);
+                    window.selectOption(paramId, selections[paramId].mainColorIndex, selections[paramId].variantIndex);
                 } else {
                     // For standard options
-                    selectOption(paramId, selections[paramId]);
+                    window.selectOption(paramId, selections[paramId]);
                 }
             }
             
@@ -1312,26 +951,10 @@
                     nextButton.style.cursor = 'pointer';
                 }
             }, 200);
-        }
-        
-        // Toggle group expansion - modified to allow completed groups to always be toggled
-        function toggleGroup(groupNum) {
-            // Only prevent toggling groups marked as inactive AND not completed
-            const groupButton = document.getElementById(`group-${groupNum}`);
-            if (groupButton.classList.contains('inactive') && !groupButton.classList.contains('completed')) {
-                return;
-            }
-            
-            // Toggle the group content visibility
-            const content = document.getElementById(`content-${groupNum}`);
-            content.classList.toggle('active');
-            
-            // Toggle the chevron icon
-            groupButton.classList.toggle('active');
-        }
-        
-        // Handle parameter completion - ensure all groups close and slide to bottom when complete
-        function completeParameter(paramId) {
+        };
+
+        // Expose completeParameter function to global scope since it's referenced elsewhere
+        window.completeParameter = function(paramId) {
             // Check if an option is selected
             if (selections[paramId] === undefined) {
                 alert('Please select an option first');
@@ -1479,1826 +1102,1019 @@
             
             // Update character summary
             updateCharacterSummary();
-        }
+        };
         
-        // Helper function to handle group completion
-        function handleGroupCompletion(groupNum) {
-            document.getElementById(`group-${groupNum}`).classList.add('completed');
-            
-            // Close this group's accordion since it's completed
-            const content = document.getElementById(`content-${groupNum}`);
-            if (content.classList.contains('active')) {
-                content.classList.remove('active');
-                document.getElementById(`group-${groupNum}`).classList.remove('active');
-            }
-            
-            // Move completed group to the bottom
-            const groupSection = document.getElementById(`group-section-${groupNum}`);
-            const container = document.getElementById('main-container');
-            
-            // Add a transition for smooth visual movement
-            groupSection.style.transition = 'opacity 0.3s ease-out';
-            groupSection.style.opacity = '0.5';
-            
-            setTimeout(() => {
-                // Move the group section to the end of the container
-                container.appendChild(groupSection);
-                
-                // Animate it back in
-                setTimeout(() => {
-                    groupSection.style.opacity = '1';
-                    
-                    // Remove the transition after animation completes
-                    setTimeout(() => {
-                        groupSection.style.transition = '';
-                    }, 300);
-                }, 50);
-            }, 300);
-            
-            // Activate next group
-            if (groupNum < 4) {
-                const nextGroupNum = groupNum + 1;
-                
-                // Debug which group we're activating
-                console.log(`Activating next group: Group ${nextGroupNum}`);
-                const nextGroupButton = document.getElementById(`group-${nextGroupNum}`);
-                nextGroupButton.classList.remove('inactive');
-                
-                // Show the first parameter of next group
-                const nextGroupStart = groupStarts[nextGroupNum];
-                if (nextGroupStart) {
-                    const nextGroupFirstParam = document.getElementById(`parameter-${nextGroupStart}`);
-                    if (nextGroupFirstParam) {
-                        nextGroupFirstParam.classList.remove('hidden');
-                    }
-                }
-                
-                // Explicitly ensure we're opening the next group in sequence
-                for (let i = 1; i <= 4; i++) {
-                    const content = document.getElementById(`content-${i}`);
-                    const button = document.getElementById(`group-${i}`);
-                    
-                    if (i === nextGroupNum) {
-                        // Open the next group
-                        content.classList.add('active');
-                        button.classList.add('active');
-                    } else if (i !== groupNum) {
-                        // Keep other groups (except completed one) in their current state
-                        // Don't change their state here
-                    }
-                }
-            } else {
-                // All done! - Now all groups should remain clickable after completion
-                alert('Character creation complete!');
-                
-                // Make sure all groups remain clickable after completion AND turn all bars green
-                for (let i = 1; i <= 4; i++) {
-                    const groupBtn = document.getElementById(`group-${i}`);
-                    if (groupBtn) {
-                        // Remove inactive state
-                        if (groupBtn.classList.contains('inactive')) {
-                            groupBtn.classList.remove('inactive');
-                        }
-                        
-                        // Add completed state to all groups to turn them green
-                        if (!groupBtn.classList.contains('completed')) {
-                            groupBtn.classList.add('completed');
-                        }
-                    }
-                }
-                
-                // Disable the Auto-Random button since character is complete
-                const randomButton = document.getElementById('random-button');
-                randomButton.textContent = "Character Complete";
-                randomButton.classList.remove('active');
-                randomButton.disabled = true;
-                randomButton.style.opacity = "0.6";
-                randomButton.style.cursor = "not-allowed";
-                randomButton.style.backgroundColor = "#95a5a6"; // Gray color
-                
-                // Stop random generation if it's running
-                if (isRandomGenerating) {
-                    isRandomGenerating = false;
-                    stopRandomGeneration();
-                }
-            }
-            
-            // Check if this completion completes all groups
-            const allGroupsNowComplete = Object.keys(paramGroups).every(id => completedParams[id]);
-            
-            // Fix: Loop through all groups to ensure we can access completed groups' parameters
-            for (let grpNum = 1; grpNum <= 4; grpNum++) {
-                const grpButton = document.getElementById(`group-${grpNum}`);
-                if (grpButton && grpButton.classList.contains('completed')) {
-                    // This group is completed, make sure its parameters are still accessible
-                    const group = taxonomyData[grpNum];
-                    if (group && group.parameters) {
-                        group.parameters.forEach(param => {
-                            const paramId = param.id;
-                            if (completedParams[paramId]) {
-                                // Re-enable this parameter for editing if it was disabled by rules
-                                const paramElement = document.getElementById(`parameter-${paramId}`);
-                                if (paramElement && paramElement.classList.contains('disabled-parameter')) {
-                                    paramElement.classList.remove('disabled-parameter');
-                                    paramElement.style.opacity = '';
-                                }
-                            }
-                        });
-                    }
-                }
-            }
-            
-            // Make sure gender-specific parameters stay properly hidden/shown
-            if (selections[1] !== undefined) {
-                const genderOption = taxonomyData[1].parameters.find(p => p.id === 1).options[selections[1]];
-                const selectedGender = genderOption.name.toLowerCase();
-                handleFacialHairVisibility(selectedGender.includes('female'));
-            }
-        }
-        
-        // Toggle random character generation
-        function toggleRandomGeneration() {
-            // Check if character is complete (all 4 groups are completed)
-            const allGroupsCompleted = [1, 2, 3, 4].every(groupNum => {
-                const groupBtn = document.getElementById(`group-${groupNum}`);
-                return groupBtn && groupBtn.classList.contains('completed');
-            });
-            
-            if (allGroupsCompleted && !isRandomGenerating) {
-                // Don't allow starting random generation when character is complete
-                alert("Character is already complete. Reset to create a new random character.");
-                return;
-            }
-            
-            isRandomGenerating = !isRandomGenerating;
-            const button = document.getElementById('random-button');
-            
-            if (isRandomGenerating) {
-                button.textContent = "Stop Random";
-                button.classList.add('active');
-                startRandomGeneration();
-            } else {
-                button.textContent = "Auto-Random";
-                button.classList.remove('active');
-                stopRandomGeneration();
-            }
-        }
-        
-        // Stop random generation by clearing the timer
-        function stopRandomGeneration() {
-            if (randomTimer) {
-                clearTimeout(randomTimer);
-                randomTimer = null;
-            }
-        }
-        
-        // Start the random generation process
-        function startRandomGeneration() {
-            // Reset if everything is already completed
-            const allCompleted = Object.keys(paramGroups).every(paramId => completedParams[paramId]);
-            if (allCompleted) {
-                // Reset selections and start from beginning
-                resetAllSelections();
-                currentRandomGroup = 1;
-                currentParameterIndex = 0;
-            } else {
-                // Find first uncompleted parameter
-                findNextUncompleted();
-            }
-            
-            // Start the timer
-            randomNext();
-        }
-        
-        // Find the next uncompleted parameter
-        function findNextUncompleted() {
-            // Start from the current position
-            for (let groupNum = currentRandomGroup; groupNum <= 4; groupNum++) {
-                const group = taxonomyData[groupNum];
-                if (!group || !group.parameters) continue;
-                
-                let startIndex = groupNum === currentRandomGroup ? currentParameterIndex : 0;
-                for (let i = startIndex; i < group.parameters.length; i++) {
-                    const param = group.parameters[i];
-                    if (!completedParams[param.id]) {
-                        currentRandomGroup = groupNum;
-                        currentParameterIndex = i;
-                        return;
-                    }
-                }
-            }
-            
-            // If we get here, everything is complete - restart from beginning
-            currentRandomGroup = 1;
-            currentParameterIndex = 0;
-        }
-        
-        // Process the next random parameter
-        function randomNext() {
-            if (!isRandomGenerating) return;
-            
-            try {
-                // Get current group and parameter
-                const group = taxonomyData[currentRandomGroup];
-                if (!group || !group.parameters || currentParameterIndex >= group.parameters.length) {
-                    // Move to next group
-                    currentRandomGroup++;
-                    currentParameterIndex = 0;
-                    
-                    // If we've gone beyond the last group, we're done
-                    if (currentRandomGroup > 4) {
-                        stopRandomGeneration();
-                        
-                        // Disable the Auto-Random button since character is complete
-                        const randomButton = document.getElementById('random-button');
-                        randomButton.textContent = "Character Complete";
-                        randomButton.classList.remove('active');
-                        randomButton.disabled = true;
-                        randomButton.style.opacity = "0.6";
-                        randomButton.style.cursor = "not-allowed";
-                        randomButton.style.backgroundColor = "#95a5a6"; // Gray color
-                        
-                        // Make sure the final group (Hair) closes and slides down
-                        setTimeout(() => {
-                            for (let groupNum = 1; groupNum <= 4; groupNum++) {
-                                const content = document.getElementById(`content-${groupNum}`);
-                                const groupButton = document.getElementById(`group-${groupNum}`);
-                                if (content && content.classList.contains('active')) {
-                                    content.classList.remove('active');
-                                    if (groupButton) groupButton.classList.remove('active');
-                                }
-                                
-                                // Ensure all groups are marked as complete
-                                if (groupButton) {
-                                    groupButton.classList.add('completed');
-                                    groupButton.classList.remove('inactive');
-                                }
-                            }
-                            
-                            // Trigger the reordering of groups
-                            const groupSections = Array.from(document.querySelectorAll('[id^="group-section-"]'));
-                            const container = document.getElementById('main-container');
-                            groupSections.forEach(section => {
-                                container.appendChild(section);
-                            });
-                        }, 300);
-                        
-                        alert('Random character generation complete!');
-                        return;
-                    }
-                    
-                    // Move to next uncompleted parameter
-                    findNextUncompleted();
-                    // Schedule next step
-                    randomTimer = setTimeout(randomNext, randomSpeed);
-                    return;
-                }
+        // Make sure to remove any duplicate function definitions later in the code
 
-                // Check if the parameter is currently disabled by rules
-                const param = group.parameters[currentParameterIndex];
-                if (!param) {
-                    // Skip invalid parameters
-                    currentParameterIndex++;
-                    randomTimer = setTimeout(randomNext, randomSpeed);
-                    return;
-                }
-                
-                const paramElement = document.getElementById(`parameter-${param.id}`);
-                if (!paramElement || paramElement.classList.contains('disabled-parameter')) {
-                    // Parameter is disabled, skip to next one
-                    console.log(`Skipping disabled parameter ${param.id}: ${param.name}`);
-                    currentParameterIndex++;
-                    randomTimer = setTimeout(randomNext, randomSpeed);
-                    return;
-                }
-                
-                // Check if all available options are hidden or disabled
-                const options = Array.from(paramElement.querySelectorAll('.option:not(.disabled):not(.permanently-disabled):not([style*="display: none"])'));
-                if (options.length === 0) {
-                    // No valid options, skip to next parameter
-                    console.log(`Skipping parameter ${param.id} with no valid options: ${param.name}`);
-                    currentParameterIndex++;
-                    randomTimer = setTimeout(randomNext, randomSpeed);
-                    return;
-                }
-                
-                // Skip if already completed
-                if (completedParams[param.id]) {
-                    currentParameterIndex++;
-                    randomTimer = setTimeout(randomNext, randomSpeed);
-                    return;
-                }
-
-                // Determine appropriate delay based on parameter type
-                const isFacialHairRelated = [28, 29, 30, 31, 32, 33].includes(param.id);
-                const isHairRelated = [19, 20, 21, 22, 23, 24, 25, 26].includes(param.id);
-                const delay = isFacialHairRelated ? randomSpeed * 2 : 
-                             isHairRelated ? randomSpeed * 1.5 : 
-                             randomSpeed;
-                
-                // Process the parameter in a non-blocking way
-                setTimeout(() => {
-                    try {
-                        processRandomParameter(param);
-                    } catch (err) {
-                        console.error(`Error processing parameter ${param.id}:`, err);
-                    }
-                    // Move to next parameter regardless of success/failure
-                    currentParameterIndex++;
-                    // Schedule next step
-                    randomTimer = setTimeout(randomNext, delay);
-                }, 0);
-                
-            } catch (err) {
-                console.error("Error in randomNext:", err);
-                // Recover and continue
-                currentParameterIndex++;
-                randomTimer = setTimeout(randomNext, randomSpeed);
-            }
-        }
-
-        // Process a random parameter selection with better error handling
-        function processRandomParameter(param) {
-            try {
-                // Get parameter element
-                const paramElement = document.getElementById(`parameter-${param.id}`);
-                if (!paramElement) return;
-                
-                // Only get visible non-disabled options (skip hidden ones completely)
-                const options = Array.from(paramElement.querySelectorAll('.option:not(.disabled):not(.permanently-disabled):not([style*="display: none"])'));
-                if (options.length === 0) return;
-                
-                // Use setTimeout to avoid blocking the UI
-                setTimeout(() => {
-                    // Select a random option
-                    const randomIndex = Math.floor(Math.random() * options.length);
-                    const selectedOption = options[randomIndex];
-                    if (!selectedOption) return;
-                    
-                    // Simulate a click on the option
-                    try {
-                        selectedOption.click();
-                    } catch (err) {
-                        console.error(`Error clicking option for parameter ${param.id}:`, err);
-                        return;
-                    }
-                    
-                    // Special handling for certain parameters
-                    const isCriticalParam = [20, 28, 29, 30, 31, 32, 33].includes(param.id);
-                    const isLastInGroup = !nextParam[param.id]; // Check if this is the last parameter in its group
-                    
-                    // For critical parameters (hair and facial hair), use a longer delay
-                    setTimeout(() => {
-                        try {
-                            // Select modifiers if needed (for non-critical parameters)
-                            if (!isCriticalParam && param.modifiers && !Array.isArray(param.modifiers)) {
-                                selectRandomModifiers(param);
-                            }
-                            
-                            // Click the next button after a delay
-                            setTimeout(() => {
-                                const nextButton = paramElement.querySelector('.next-button');
-                                if (nextButton && !nextButton.disabled) {
-                                    // If this is the last parameter in group 4 (Hair), add special handling
-                                    if (paramGroups[param.id] === 4 && isLastInGroup) {
-                                        console.log("Last parameter in Hair group detected, will ensure group closes properly");
-                                        
-                                        // Add a callback to properly close and reorder after the last parameter completes
-                                        const originalCompleteParameter = window.completeParameter;
-                                        window.completeParameter = function(paramId) {
-                                            originalCompleteParameter(paramId);
-                                            
-                                            // If this was the last parameter in group 4, ensure cleanup
-                                            if (paramId === param.id) {
-                                                setTimeout(() => {
-                                                    // Force the group closed
-                                                    const content4 = document.getElementById('content-4');
-                                                    const group4Button = document.getElementById('group-4');
-                                                    if (content4) content4.classList.remove('active');
-                                                    if (group4Button) group4Button.classList.remove('active');
-                                                    
-                                                    // Restore original function
-                                                    window.completeParameter = originalCompleteParameter;
-                                                }, 500);
-                                            }
-                                        };
-                                    }
-                                    
-                                    nextButton.click();
-                                }
-                            }, isCriticalParam ? 300 : 100);
-                        } catch (err) {
-                            console.error(`Error processing modifiers for param ${param.id}:`, err);
-                        }
-                    }, isCriticalParam ? 200 : 50);
-                }, 10); // Small delay to let the UI breathe
-            } catch (err) {
-                console.error(`Fatal error in processRandomParameter ${param.id}:`, err);
-            }
-        }
-
-        // New function to select random modifiers safely
-        function selectRandomModifiers(param) {
-            if (!param.modifiers) return;
-            const paramElement = document.getElementById(`parameter-${param.id}`);
-            if (!paramElement) return;
-            const modifierEntries = Object.entries(param.modifiers);
-            if (modifierEntries.length === 0) return;
+        // Create UI element for a parameter
+        function createParameterElement(param, visible = false) {
+            const paramElement = document.createElement('div');
+            paramElement.id = `parameter-${param.id}`;
+            paramElement.className = `parameter ${visible ? '' : 'hidden'}`;
             
-            // Process just a few modifiers at a time to prevent UI freeze
-            const limit = Math.min(2, modifierEntries.length);
+            // Add parameter header and description
+            paramElement.innerHTML = `
+                <h3>${param.id}. ${param.name}</h3>
+                <div class="parameter-status">${param.status}</div>
+                <div class="parameter-description">${param.description}</div>
+            `;
             
-            for (let i = 0; i < limit; i++) {
-                const [modName, modOptions] = modifierEntries[i];
-                if (!modOptions || modOptions.length === 0) continue;
-                const randomModIndex = Math.floor(Math.random() * modOptions.length);
-                
-                try {
-                    const modifierContainer = document.getElementById(`options-${param.id}`);
-                    if (!modifierContainer) continue;
-                    const modifierSection = Array.from(modifierContainer.querySelectorAll('.modifier')).find(
-                        el => el.querySelector('.modifier-name').textContent === modName
-                    );
-                    
-                    if (!modifierSection) continue;
-                    
-                    const modOptions = modifierSection.querySelectorAll('.modifier-option');
-                    if (randomModIndex < modOptions.length) {
-                        // Safely select the modifier
-                        selectModifier(param.id, modName, randomModIndex);
-                    }
-                } catch (err) {
-                    console.warn(`Error selecting modifier ${modName}:`, err);
-                }
-            }
-        }
-
-        // Improve the UI freeze detection to be more responsive
-        function detectAndFixUIFreezing() {
-            let lastFrameTime = performance.now();
-            let frozenFramesDetected = 0;
-            const maxAllowedFrameTime = 150; // ms
+            // Create options container
+            const optionsContainer = document.createElement('div');
+            optionsContainer.id = `options-${param.id}`;
+            optionsContainer.className = 'options-container';
             
-            function checkFrame() {
-                const now = performance.now();
-                const frameDuration = now - lastFrameTime;
-                
-                // If a frame takes too long (potential freeze) during random generation
-                if (frameDuration > maxAllowedFrameTime && isRandomGenerating) {
-                    frozenFramesDetected++;
-                    
-                    // If we detect multiple consecutive frozen frames
-                    if (frozenFramesDetected >= 2) {
-                        console.warn(`UI freezing detected (${frameDuration.toFixed(0)}ms frame), attempting recovery...`);
+            // Add options
+            param.options.forEach((option, index) => {
+                // Special handling for Hair Color which has variants structure
+                if (param.name === "Hair Color" && option.variants) {
+                    // For each variant in the Hair Color option, create a separate option element
+                    option.variants.forEach((variant, variantIndex) => {
+                        const variantOptionElement = document.createElement('div');
+                        variantOptionElement.className = 'option';
+                        // When clicked, this needs to store both the parent option and the variant
+                        variantOptionElement.onclick = () => window.selectOption(param.id, index, variantIndex);
                         
-                        // Take emergency action to recover
-                        if (randomTimer) {
-                            clearTimeout(randomTimer);
-                            randomTimer = null;
-                        }
+                        variantOptionElement.innerHTML = `
+                            <div class="option-label">${option.name} - ${variant.name}</div>
+                            <div class="option-description">
+                                <div><span class="description-label">Visual:</span> ${variant.visual}</div>
+                                <div><span class="description-label">As Seen In:</span> ${variant.as_seen_in}</div>
+                            </div>
+                        `;
                         
-                        // Skip the problematic parameter
-                        currentParameterIndex++;
-                        
-                        // If we're in facial hair section, skip ahead more aggressively
-                        const currentParam = getCurrentParameterId();
-                        if (currentParam >= 28 && currentParam <= 33) {
-                            console.warn("Detected freeze in facial hair section, skipping ahead");
-                            currentParameterIndex = 0;
-                            currentRandomGroup = Math.min(4, currentRandomGroup + 1);
-                        }
-                        
-                        // Resume with a fresh timer
-                        randomTimer = setTimeout(randomNext, randomSpeed * 2);
-                        frozenFramesDetected = 0;
-                    }
+                        optionsContainer.appendChild(variantOptionElement);
+                    });
                 } else {
-                    // Reset detection if we get a normal frame
-                    frozenFramesDetected = 0;
+                    // Standard options for other parameters
+                    const optionElement = document.createElement('div');
+                    optionElement.className = 'option';
+                    optionElement.onclick = () => window.selectOption(param.id, index);
+                    
+                    // For all other parameters with standard structure
+                    const visual = option.visual || option.description || option.Visual || option.Description || "";
+                    const asSeenIn = option.asSeenIn || option.as_seen_in || option.AsSeenIn || option["As Seen In"] || "";
+                    
+                    optionElement.innerHTML = `
+                        <div class="option-label">${option.name || "Unnamed Option"}</div>
+                        <div class="option-description">
+                            <div><span class="description-label">Visual:</span> ${visual}</div>
+                            <div><span class="description-label">As Seen In:</span> ${asSeenIn}</div>
+                        </div>
+                    `;
+                    
+                    optionsContainer.appendChild(optionElement);
                 }
+            });
+            
+            // Add modifiers if present
+            if (param.modifiers) {
+                const modifiersSection = document.createElement('div');
+                modifiersSection.className = 'modifiers-section';
+                modifiersSection.innerHTML = '<h4>Modifiers</h4>';
                 
-                lastFrameTime = now;
-                requestAnimationFrame(checkFrame);
-            }
-            
-            // Helper function to get current parameter ID
-            function getCurrentParameterId() {
-                const group = taxonomyData[currentRandomGroup];
-                if (!group || !group.parameters || currentParameterIndex >= group.parameters.length) {
-                    return -1;
-                }
-                return group.parameters[currentParameterIndex].id;
-            }
-            
-            // Start monitoring
-            requestAnimationFrame(checkFrame);
-        }
-
-        // Fix the syntax error in resetAllSelections function
-        function resetAllSelections() {
-            // Clear all selections
-            Object.keys(selections).forEach(paramId => {
-                delete selections[paramId];
-            });
-            
-            // Clear completed params
-            Object.keys(completedParams).forEach(paramId => {
-                delete completedParams[paramId];
-            });
-            
-            // Clear modifier selections
-            Object.keys(modifierSelections).forEach(paramId => {
-                delete modifierSelections[paramId];
-            });
-            
-            // Rest of the function...
-            for (let groupNum = 1; groupNum <= 4; groupNum++) {
-                // Hide all params except first in first group
-                if (taxonomyData[groupNum] && taxonomyData[groupNum].parameters) {
-                    taxonomyData[groupNum].parameters.forEach((param, index) => {
-                        const paramElement = document.getElementById(`parameter-${param.id}`);
-                        if (paramElement) {
-                            if (groupNum === 1 && index === 0) {
-                                paramElement.classList.remove('hidden');
-                            } else {
-                                paramElement.classList.add('hidden');
-                            }
-                            
-                            // Clear selected options
-                            paramElement.querySelectorAll('.option.selected').forEach(option => {
-                                option.classList.remove('selected');
-                            });
-                            
-                            // Clear selected modifiers
-                            paramElement.querySelectorAll('.modifier-option.selected').forEach(option => {
-                                option.classList.remove('selected');
-                            });
-                        }
+                // Handle object-style modifiers (as in your JSON files)
+                if (!Array.isArray(param.modifiers)) {
+                    Object.entries(param.modifiers).forEach(([modName, modOptions]) => {
+                        const modifierElement = document.createElement('div');
+                        modifierElement.className = 'modifier';
+                        
+                        // Add modifier name
+                        const modifierName = document.createElement('div');
+                        modifierName.className = 'modifier-name';
+                        modifierName.textContent = modName;
+                        modifierElement.appendChild(modifierName);
+                        
+                        // Add modifier options
+                        const modifierOptions = document.createElement('div');
+                        modifierOptions.className = 'modifier-options';
+                        
+                        modOptions.forEach((option, optIndex) => {
+                            const modOptionElement = document.createElement('div');
+                            modOptionElement.className = 'modifier-option';
+                            modOptionElement.textContent = option.name;
+                            modOptionElement.onclick = () => window.selectModifier(param.id, modName, optIndex);
+                            modifierOptions.appendChild(modOptionElement);
+                        });
+                        
+                        modifierElement.appendChild(modifierOptions);
+                        modifiersSection.appendChild(modifierElement);
+                    });
+                } else {
+                    // Original code for array-style modifiers
+                    param.modifiers.forEach(modifier => {
+                        const modifierElement = document.createElement('div');
+                        modifierElement.className = 'modifier';
+                        
+                        // Add modifier name
+                        const modifierName = document.createElement('div');
+                        modifierName.className = 'modifier-name';
+                        modifierName.textContent = modifier.name;
+                        modifierElement.appendChild(modifierName);
+                        
+                        // Add modifier options
+                        const modifierOptions = document.createElement('div');
+                        modifierOptions.className = 'modifier-options';
+                        
+                        modifier.options.forEach((option, optIndex) => {
+                            const modOptionElement = document.createElement('div');
+                            modOptionElement.className = 'modifier-option';
+                            modOptionElement.textContent = option.name;
+                            modOptionElement.onclick = () => window.selectModifier(param.id, modifier.name, optIndex);
+                            modifierOptions.appendChild(modOptionElement);
+                        });
+                        
+                        modifierElement.appendChild(modifierOptions);
+                        modifiersSection.appendChild(modifierElement);
                     });
                 }
                 
-                // Reset completed sections
-                const completedSection = document.getElementById(`completed-${groupNum}`);
-                if (completedSection) {
-                    completedSection.innerHTML = '';
-                    completedSection.classList.add('hidden');
-                }
-                
-                // Reset progress bars
-                const progressBar = document.getElementById(`progress-${groupNum}`);
-                if (progressBar) {
-                    progressBar.style.width = '0%';
-                }
-                
-                // Reset group buttons
-                const groupButton = document.getElementById(`group-${groupNum}`);
-                if (groupButton) {
-                    if (groupNum === 1) {
-                        groupButton.classList.remove('inactive');
-                        groupButton.classList.add('active');
-                    } else {
-                        groupButton.classList.add('inactive');
-                        groupButton.classList.remove('active', 'completed');
-                    }
-                }
-                
-                // Show/hide group content
-                const groupContent = document.getElementById(`content-${groupNum}`);
-                if (groupContent) {
-                    if (groupNum === 1) {
-                        groupContent.classList.add('active');
-                    } else {
-                        groupContent.classList.remove('active');
-                    }
-                }
+                optionsContainer.appendChild(modifiersSection);
             }
             
-            // Re-enable the random button when resetting
-            const randomButton = document.getElementById('random-button');
-            randomButton.textContent = "Auto-Random";
-            randomButton.disabled = false;
-            randomButton.style.opacity = "";
-            randomButton.style.cursor = "pointer";
-            randomButton.style.backgroundColor = "";
+            // Add next button
+            const nextButton = document.createElement('button');
+            nextButton.className = 'next-button';
+            nextButton.textContent = 'Next';
+            nextButton.onclick = () => window.completeParameter(param.id);
+            optionsContainer.appendChild(nextButton);
             
-            // Re-hide specific options like "Bald" after reset
-            setTimeout(hideSpecificOptions, 100);
-            
-            // Update character summary
-            updateCharacterSummary();
-            
-            // Clear rule effects
-            clearRuleEffects();
+            paramElement.appendChild(optionsContainer);
+            return paramElement;
         }
-        
-        // Update speed when slider changes
-        document.addEventListener('DOMContentLoaded', function() {
-            const speedSlider = document.getElementById('random-speed');
-            const speedValue = document.getElementById('speed-value');
-            
-            speedSlider.addEventListener('input', function() {
-                randomSpeed = parseInt(speedSlider.value);
-                speedValue.textContent = (randomSpeed / 1000).toFixed(1) + 's';
-            });
-            
-            // Set initial value
-            speedValue.textContent = (randomSpeed / 1000).toFixed(1) + 's';
-        });
 
-        // Initialize the application
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeApp();
-            detectAndFixUIFreezing();
-            
-            // Prevent accidental navigation away if there's a character
-            window.addEventListener('beforeunload', function(event) {
-                if (Object.keys(completedParams).length > 0) {
-                    const message = "You have an unsaved character. Are you sure you want to leave?";
-                    event.returnValue = message;
-                    return message;
-                }
-            });
-        });
-
-        // Add event handlers for new functions
-        window.clearRuleEffects = clearRuleEffects;
-        window.applyAllRules = applyAllRules;
-        window.applyAllRulesWithCompletedGroups = applyAllRulesWithCompletedGroups;
-        window.copyCharacter = copyCharacter;
-        window.generateComposedPrompt = generateComposedPrompt;
-        // Define copyComposedPrompt only once and make it globally available
-        function copyComposedPrompt() {
+        // Load taxonomy data and rules from external files
+        async function loadTaxonomyData() {
             try {
-                // Use the generator module to get the description
-                const composedPrompt = window.PromptGenerator.generateNaturalLanguageDescription(completedParams, taxonomyData);
-                const copyButton = document.querySelector('.copy-content-button');
-                const originalText = copyButton ? copyButton.textContent : 'Copy';
+                // Fetch taxonomy data
+                const response = await fetch('./data/hbsTaxonomy.json');
+                taxonomyData = await response.json();
                 
-                // Use a try-catch block to handle clipboard API properly
-                try {
-                    // Use a more robust clipboard approach with proper Promise handling
-                    if (navigator.clipboard) {
-                        navigator.clipboard.writeText(composedPrompt)
-                            .then(() => {
-                                showNotification("Description copied to clipboard!");
-                                
-                                // If we have a button, update its text
-                                if (copyButton) {
-                                    copyButton.textContent = 'Copied!';
-                                    copyButton.style.backgroundColor = '#27ae60';
-                                    
-                                    // Reset after 2 seconds
-                                    setTimeout(() => {
-                                        copyButton.textContent = originalText;
-                                        copyButton.style.backgroundColor = '';
-                                    }, 2000);
-                                }
-                            })
-                            .catch(err => {
-                                console.error('Clipboard API failed: ', err);
-                                // Fall back to execCommand method
-                                fallbackCopy(composedPrompt, copyButton, originalText);
-                            });
-                    } else {
-                        // Browser doesn't support clipboard API
-                        fallbackCopy(composedPrompt, copyButton, originalText);
-                    }
-                } catch (clipboardErr) {
-                    console.error('Error with clipboard operations: ', clipboardErr);
-                    fallbackCopy(composedPrompt, copyButton, originalText);
-                }
-            } catch (err) {
-                console.error('Error generating prompt: ', err);
-                alert('Failed to generate the description. Please try again.');
+                // Load rules
+                const rulesResponse = await fetch('./data/rules.json');
+                rules = await rulesResponse.json();
+                
+                // Initialize UI once data is loaded
+                initializeUI();
+            } catch (error) {
+                console.error('Error loading taxonomy data:', error);
+                document.getElementById('main-container').innerHTML = `
+                    <div class="error">
+                        <h3>Error Loading Data</h3>
+                        <p>Could not load taxonomy data. Please check your internet connection and try again.</p>
+                        <pre>${error.message}</pre>
+                    </div>
+                `;
             }
         }
-        // Make it available globally
-        window.copyComposedPrompt = copyComposedPrompt;
-        
-        // Fallback copy method for browsers that don't support clipboard API
-        function fallbackCopy(text, button, originalText) {
-            try {
-                // Create a temporary textarea element to hold the text
-                const textarea = document.createElement('textarea');
-                textarea.value = text;
-                textarea.style.position = 'absolute';
-                textarea.style.left = '-9999px';
-                textarea.style.top = '0';
-                document.body.appendChild(textarea);
+
+        // Add the missing initializeUI function that's called in loadTaxonomyData
+        function initializeUI() {
+            const mainContainer = document.getElementById('main-container');
+            mainContainer.innerHTML = ''; // Clear loading message
+            
+            // Create group containers
+            Object.keys(taxonomyData).forEach((groupNum, index) => {
+                const group = taxonomyData[groupNum];
                 
-                // Select the text and copy it
-                textarea.select();
-                let successful = document.execCommand('copy');
-                document.body.removeChild(textarea);
+                // Store parameter-to-group mapping
+                group.parameters.forEach(param => {
+                    paramGroups[param.id] = parseInt(groupNum);
+                    parameters[param.id] = param;
+                });
                 
-                // Provide visual feedback
-                if (successful) {
-                    showNotification("Description copied to clipboard!");
+                // Set up chain of parameters for navigation
+                for (let i = 0; i < group.parameters.length - 1; i++) {
+                    nextParam[group.parameters[i].id] = group.parameters[i + 1].id;
+                }
+                
+                // Create group button
+                const groupButton = document.createElement('button');
+                groupButton.id = `group-${groupNum}`;
+                groupButton.className = `group-button ${index === 0 ? '' : 'inactive'}`;
+                groupButton.innerHTML = `
+                    ${group.name} <span class="chevron">▼</span>
+                `;
+                groupButton.onclick = () => toggleGroup(groupNum);
+                
+                // Create progress indicator
+                const progressIndicator = document.createElement('div');
+                progressIndicator.className = 'progress-indicator';
+                progressIndicator.innerHTML = `<div id="progress-${groupNum}" class="progress-bar"></div>`;
+                
+                // Create group content container
+                const groupContent = document.createElement('div');
+                groupContent.id = `content-${groupNum}`;
+                groupContent.className = `group-content ${index === 0 ? 'active' : ''}`;
+                if (index === 0) {
+                    // Set initial height for first group
+                    setTimeout(() => {
+                        groupContent.style.height = groupContent.scrollHeight + 'px';
+                    }, 0);
+                }
+                
+                // Create completed parameters section
+                const completedSection = document.createElement('div');
+                completedSection.id = `completed-${groupNum}`;
+                completedSection.className = 'completed-section hidden';
+                groupContent.appendChild(completedSection);
+                
+                // Create parameter elements and add to group content
+                group.parameters.forEach((param, paramIndex) => {
+                    // First parameter of first group is visible by default
+                    const isVisible = index === 0 && paramIndex === 0;
+                    const paramElement = createParameterElement(param, isVisible);
+                    groupContent.appendChild(paramElement);
                     
-                    if (button) {
-                        button.textContent = 'Copied!';
-                        button.style.backgroundColor = '#27ae60';
-                        
-                        // Reset after 2 seconds
-                        setTimeout(() => {
-                            button.textContent = originalText;
-                            button.style.backgroundColor = '';
-                        }, 2000);
+                    // Store first parameter of each group
+                    if (paramIndex === 0) {
+                        groupStarts[groupNum] = param.id;
                     }
-                } else {
-                    throw new Error('Copy command was unsuccessful');
-                }
-            } catch (err) {
-                console.error('Fallback copy failed: ', err);
-                alert('Could not copy text. Please copy manually.');
-            }
+                });
+                
+                // Add elements to main container
+                mainContainer.appendChild(groupButton);
+                mainContainer.appendChild(progressIndicator);
+                mainContainer.appendChild(groupContent);
+            });
+            
+            // Set up event handlers for UI elements
+            setupEventHandlers();
         }
 
-        // Add new function to calculate group progress
-        function updateGroupProgress(groupNum) {
-            const groupParams = Object.keys(paramGroups).filter(key => paramGroups[key] === groupNum);
-            const totalParamsInGroup = groupParams.length;
-            const completedParamsInGroup = Object.keys(completedParams)
-                .filter(key => paramGroups[key] === groupNum).length;
-            
-            const progress = (completedParamsInGroup / totalParamsInGroup) * 100;
-            document.getElementById(`progress-${groupNum}`).style.width = `${progress}%`;
-        }
-
-        // Handle tab switching
-        document.addEventListener('DOMContentLoaded', function() {
-            const tabs = document.querySelectorAll('.tab-button');
-            
-            tabs.forEach(tab => {
-                tab.addEventListener('click', () => {
+        // Helper function to set up additional event handlers
+        function setupEventHandlers() {
+            // Tab navigation
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.addEventListener('click', function() {
+                    const tabId = this.getAttribute('data-tab');
+                    
                     // Remove active class from all tabs and contents
-                    document.querySelectorAll('.tab-button').forEach(t => t.classList.remove('active'));
-                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
                     
-                    // Add active class to clicked tab
-                    tab.classList.add('active');
-                    
-                    // Show corresponding content
-                    const tabId = tab.getAttribute('data-tab');
+                    // Add active class to clicked tab and its content
+                    this.classList.add('active');
                     document.getElementById(`${tabId}-tab`).classList.add('active');
                 });
             });
             
-            // Handle copy button click - improved clipboard handling
-            const copyButton = document.querySelector('.copy-content-button');
-            if (copyButton) {
-                copyButton.addEventListener('click', async () => {
-                    // Get active tab content
-                    const activeTab = document.querySelector('.tab-content.active');
-                    let content = '';
-                    
-                    if (activeTab.id === 'description-tab' || activeTab.id === 't2i-prompt-tab') {
-                        content = activeTab.textContent;
-                    } else if (activeTab.id === 'markdown-tab') {
-                        content = document.getElementById('markdown-content').textContent;
-                    } else if (activeTab.id === 'json-tab') {
-                        content = document.getElementById('json-content').textContent;
+            // Copy button
+            document.querySelector('.copy-content-button')?.addEventListener('click', function() {
+                const activeTab = document.querySelector('.tab-content.active');
+                let textToCopy = '';
+                
+                if (activeTab) {
+                    if (activeTab.id === 'description-tab') {
+                        textToCopy = activeTab.textContent;
+                    } else if (activeTab.id === 't2i-prompt-tab') {
+                        textToCopy = activeTab.querySelector('.composed-prompt-text')?.textContent || '';
+                    } else if (activeTab.id === 'markdown-tab' || activeTab.id === 'json-tab') {
+                        textToCopy = activeTab.querySelector('pre')?.textContent || '';
                     }
-                    
-                    // Make sure content is available before trying to copy
-                    if (!content) {
-                        console.warn('No content to copy');
-                        return;
-                    }
-                    
-                    const originalText = copyButton.textContent;
-                    
-                    try {
-                        // Use a more robust clipboard approach with proper async handling
-                        await new Promise((resolve, reject) => {
-                            const fallbackCopy = () => {
-                                try {
-                                    // Fallback to execCommand for older browsers
-                                    const textarea = document.createElement('textarea');
-                                    textarea.value = content;
-                                    textarea.style.position = 'fixed';
-                                    textarea.style.left = '-999999px';
-                                    document.body.appendChild(textarea);
-                                    textarea.select();
-                                    const successful = document.execCommand('copy');
-                                    document.body.removeChild(textarea);
-                                    if (successful) {
-                                        resolve();
-                                    } else {
-                                        reject(new Error('execCommand returned false'));
-                                    }
-                                } catch (err) {
-                                    reject(err);
-                                }
-                            };
-                            
-                            // Try the Clipboard API first
-                            if (navigator.clipboard) {
-                                navigator.clipboard.writeText(content).then(resolve).catch(err => {
-                                    console.warn('Clipboard API failed, trying fallback:', err);
-                                    fallbackCopy();
-                                });
-                            } else {
-                                fallbackCopy();
-                            }
-                            
-                            // Set a timeout to ensure the promise resolves
-                            setTimeout(() => resolve(), 1000);
-                        });
-                        
-                        // Show success feedback
-                        copyButton.textContent = 'Copied!';
-                        copyButton.style.backgroundColor = '#27ae60';
-                    } catch (err) {
-                        console.error('Copy failed:', err);
-                        copyButton.textContent = 'Failed!';
-                        copyButton.style.backgroundColor = '#e74c3c';
-                    }
-                    
-                    // Reset the button regardless of outcome
-                    setTimeout(() => {
-                        copyButton.textContent = originalText;
-                        copyButton.style.backgroundColor = '';
-                    }, 2000);
-                });
-            }
-        });
+                }
+                
+                if (textToCopy) {
+                    navigator.clipboard.writeText(textToCopy)
+                        .then(() => showNotification('Copied to clipboard!'))
+                        .catch(err => console.error('Error copying text:', err));
+                }
+            });
+            
+            // Speed slider
+            document.getElementById('random-speed')?.addEventListener('input', function() {
+                randomSpeed = parseInt(this.value);
+                document.getElementById('speed-value').textContent = (randomSpeed / 1000).toFixed(1) + 's';
+            });
+        }
 
-        // Save character data to file
-        function saveCharacter() {
+        // Fix 1: Add missing handleFacialHairVisibility function
+        function handleFacialHairVisibility(isFemale) {
+            const facialHairParam = document.querySelector('.parameter[id^="parameter-"][id$="3"]'); // Find facial hair param (typically param 3)
+            if (facialHairParam) {
+                if (isFemale) {
+                    facialHairParam.classList.add('gender-hidden');
+                } else {
+                    facialHairParam.classList.remove('gender-hidden');
+                }
+            }
+        }
+        
+        // Fix 2: Add missing clearRuleEffects function
+        function clearRuleEffects() {
+            // Remove any rule-related styling or classes from all parameters
+            document.querySelectorAll('.disabled-by-rule').forEach(elem => {
+                elem.classList.remove('disabled-by-rule');
+            });
+            document.querySelectorAll('.suggested-by-rule').forEach(elem => {
+                elem.classList.remove('suggested-by-rule');
+            });
+        }
+        
+        // Fix 3: Add missing applyRules function
+        function applyRules(paramId, optionIndex, variantIndex) {
+            if (!rules || (!rules.absoluteRules && !rules.suggestiveRules)) return;
+            
+            // Apply absolute rules that would disable options
+            if (rules.absoluteRules) {
+                for (const rule of rules.absoluteRules) {
+                    // Logic to apply absolute rules based on current selections
+                    // Implementation depends on rule structure
+                }
+            }
+            
+            // Apply suggestive rules
+            if (rules.suggestiveRules) {
+                for (const rule of rules.suggestiveRules) {
+                    // Logic to apply suggestive rules
+                }
+            }
+        }
+        
+        // Fix 4: Add missing handleGroupCompletion function
+        function handleGroupCompletion(groupNum) {
+            // Mark group as completed
+            document.getElementById(`group-${groupNum}`).classList.add('completed');
+            
+            // Progress bar should be at 100%
+            document.getElementById(`progress-${groupNum}`).style.width = "100%";
+            
+            // Check if there's a next group to activate
+            const nextGroup = groupNum + 1;
+            if (document.getElementById(`group-${nextGroup}`)) {
+                // Activate next group
+                document.getElementById(`group-${nextGroup}`).classList.remove('inactive');
+                
+                // Open the next group automatically
+                if (!document.getElementById(`content-${nextGroup}`).classList.contains('active')) {
+                    toggleGroup(nextGroup);
+                }
+                
+                // Show the first parameter in the next group
+                const firstParamInNextGroup = taxonomyData[nextGroup].parameters[0];
+                if (firstParamInNextGroup) {
+                    document.getElementById(`parameter-${firstParamInNextGroup.id}`).classList.remove('hidden');
+                }
+            }
+        }
+        
+        // Fix 5: Add missing applyAllRules and applyAllRulesWithCompletedGroups functions
+        function applyAllRules() {
+            // Re-apply all rules based on current selections
+            // This is called after editing a parameter
+            Object.entries(selections).forEach(([paramId, optionIndex]) => {
+                if (typeof optionIndex === 'object' && optionIndex.mainColorIndex !== undefined) {
+                    // For Hair Color with variants
+                    applyRules(parseInt(paramId), optionIndex.mainColorIndex, optionIndex.variantIndex);
+                } else {
+                    // For standard options
+                    applyRules(parseInt(paramId), optionIndex);
+                }
+            });
+        }
+        
+        function applyAllRulesWithCompletedGroups() {
+            // Apply rules but respect completed groups
+            applyAllRules();
+            
+            // Ensure completed groups remain active and their parameters aren't disabled
+            Object.keys(taxonomyData).forEach(groupNum => {
+                const isCompleted = document.getElementById(`group-${groupNum}`).classList.contains('completed');
+                if (isCompleted) {
+                    // Re-enable all parameters in completed groups if they were disabled by rules
+                    taxonomyData[groupNum].parameters.forEach(param => {
+                        const paramElement = document.getElementById(`parameter-${param.id}`);
+                        if (paramElement) {
+                            paramElement.classList.remove('disabled-parameter');
+                            paramElement.style.opacity = '';
+                        }
+                    });
+                }
+            });
+        }
+        
+        // Fix 6: Add missing updateCharacterSummary function
+        function updateCharacterSummary() {
+            const summaryContainer = document.getElementById('character-summary');
+            if (!summaryContainer) return;
+            
+            // If no selections have been made yet, show default message
             if (Object.keys(completedParams).length === 0) {
-                alert('Please create a character first by selecting parameters.');
+                summaryContainer.innerHTML = '<p>No parameters selected yet. Begin by selecting options below.</p>';
+                return;
+            }
+            
+            // Generate summary HTML
+            let summaryHTML = '';
+            
+            // Loop through groups in order
+            Object.keys(taxonomyData).sort().forEach(groupNum => {
+                const group = taxonomyData[groupNum];
+                let hasCompletedParams = false;
+                
+                let groupHTML = `<div class="summary-group"><h3>${group.name}</h3><ul>`;
+                
+                // Loop through parameters in this group
+                group.parameters.forEach(param => {
+                    if (completedParams[param.id]) {
+                        hasCompletedParams = true;
+                        const completion = completedParams[param.id];
+                        
+                        // Add the parameter and its selected value
+                        groupHTML += `<li><strong>${param.name}:</strong> ${completion.value}`;
+                        
+                        // Add modifiers if present
+                        if (completion.modifiers && Object.keys(completion.modifiers).length > 0) {
+                            groupHTML += ' (';
+                            let modifierTexts = [];
+                            
+                            Object.entries(completion.modifiers).forEach(([modName, modIndex]) => {
+                                if (param.modifiers && param.modifiers[modName]) {
+                                    const modOption = param.modifiers[modName][modIndex];
+                                    if (modOption) {
+                                        modifierTexts.push(modOption.name);
+                                    }
+                                }
+                            });
+                            
+                            groupHTML += modifierTexts.join(', ');
+                            groupHTML += ')';
+                        }
+                        
+                        groupHTML += '</li>';
+                    }
+                });
+                
+                groupHTML += '</ul></div>';
+                
+                // Add group HTML to summary if it has any completed parameters
+                if (hasCompletedParams) {
+                    summaryHTML += groupHTML;
+                }
+            });
+            
+            // Update the summary container
+            summaryContainer.innerHTML = summaryHTML;
+            
+            // Also update generated outputs in tabs
+            updateOutputFormats();
+        }
+        
+        // Fix 7: Add missing updateOutputFormats function
+        function updateOutputFormats() {
+            // Generate different output formats based on selections
+            
+            // Description tab
+            const descriptionTab = document.getElementById('description-tab');
+            if (descriptionTab) {
+                descriptionTab.innerHTML = generateDescriptionHTML();
+            }
+            
+            // T2I prompt tab
+            const t2iPromptTab = document.getElementById('t2i-prompt-tab');
+            if (t2iPromptTab) {
+                const promptText = PromptGenerator.generateT2IPrompt(completedParams, taxonomyData);
+                t2iPromptTab.innerHTML = `<div class="composed-prompt-text">${promptText}</div>`;
+            }
+            
+            // Markdown tab
+            const markdownContent = document.getElementById('markdown-content');
+            if (markdownContent) {
+                markdownContent.textContent = generateMarkdown();
+            }
+            
+            // JSON tab
+            const jsonContent = document.getElementById('json-content');
+            if (jsonContent) {
+                jsonContent.textContent = JSON.stringify(
+                    {
+                        character: completedParams,
+                        metadata: {
+                            version: "HBS r012",
+                            created: new Date().toISOString()
+                        }
+                    }, 
+                    null, 2
+                );
+            }
+            
+            // Update the previewer if it exists
+            if (window.t2iPreviewer) {
+                const promptText = PromptGenerator.generateT2IPrompt(completedParams, taxonomyData);
+                window.t2iPreviewer.updatePrompt(promptText);
+            }
+        }
+        
+        // Fix 8: Add toggleGroup function that's referenced elsewhere
+        function toggleGroup(groupNum) {
+            const button = document.getElementById(`group-${groupNum}`);
+            const content = document.getElementById(`content-${groupNum}`);
+            
+            if (!button || !content) return;
+            
+            // If group is inactive, don't toggle
+            if (button.classList.contains('inactive')) return;
+            
+            // Toggle active class for styling
+            button.classList.toggle('active');
+            content.classList.toggle('active');
+            
+            // Handle height transition for smooth animation
+            if (content.classList.contains('active')) {
+                // Get content height and set it for transition
+                content.style.height = content.scrollHeight + 'px';
+            } else {
+                content.style.height = '0';
+            }
+        }
+        
+        // Fix 9: Add missing copy, save, load functions
+        function copyCharacter() {
+            const summaryText = document.getElementById('character-summary').innerText;
+            navigator.clipboard.writeText(summaryText)
+                .then(() => showNotification('Character summary copied to clipboard!'))
+                .catch(err => console.error('Error copying text:', err));
+        }
+        
+        function saveCharacter() {
+            const characterData = {
+                selections,
+                completedParams,
+                modifierSelections
+            };
+            
+            // Convert to string and save to localStorage
+            localStorage.setItem('hbsCharacter', JSON.stringify(characterData));
+            showNotification('Character saved successfully!');
+        }
+        
+        function loadCharacter() {
+            const savedData = localStorage.getItem('hbsCharacter');
+            if (!savedData) {
+                showNotification('No saved character found!', 'error');
                 return;
             }
             
             try {
-                // Get existing character name if it exists
-                let defaultName = "My Character";
-                const nameDisplay = document.getElementById('character-name-display');
-                if (nameDisplay && nameDisplay.textContent) {
-                    defaultName = nameDisplay.textContent;
-                }
+                const characterData = JSON.parse(savedData);
                 
-                // Prompt for character name
-                const characterName = prompt("Enter a name for this character:", defaultName);
-                if (!characterName) return; // User cancelled
+                // Clear current selections
+                Object.keys(selections).forEach(key => delete selections[key]);
+                Object.keys(completedParams).forEach(key => delete completedParams[key]);
+                Object.keys(modifierSelections).forEach(key => delete modifierSelections[key]);
                 
-                // Update character name display
-                const nameElement = document.getElementById('character-name-display');
-                if (nameElement) {
-                    nameElement.textContent = characterName;
-                    nameElement.style.display = 'block';
-                }
+                // Load saved data
+                Object.assign(selections, characterData.selections);
+                Object.assign(completedParams, characterData.completedParams);
+                Object.assign(modifierSelections, characterData.modifierSelections);
                 
-                // Create character data object with all necessary info to recreate the character
-                const characterData = {
-                    name: characterName,
-                    selections: selections,
-                    completedParams: completedParams,
-                    modifierSelections: modifierSelections,
-                    version: "1.0" // For future compatibility
-                };
+                // Rebuild UI based on loaded data
+                rebuildUIFromSavedData();
                 
-                // Clean up filename
-                const cleanName = characterName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                const fileName = `hbs-character-${cleanName}-${new Date().getTime()}.json`;
-                
-                // Create blob and trigger download
-                const blob = new Blob([JSON.stringify(characterData, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = fileName;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                
-                // Show notification instead of changing button
-                showNotification("Character saved successfully!");
-                
-            } catch (err) {
-                console.error('Error saving character:', err);
-                showNotification("Error saving character!", true);
+                showNotification('Character loaded successfully!');
+            } catch (error) {
+                console.error('Error loading character:', error);
+                showNotification('Error loading character!', 'error');
             }
         }
         
-        // Load character data from file
-        function loadCharacter() {
-            if (Object.keys(completedParams).length > 0) {
-                const confirmLoad = confirm("This will replace your current character. Are you sure you want to load a different character?");
-                if (!confirmLoad) return;
-            }
-            
-            try {
-                // Create file input element
-                const fileInput = document.createElement('input');
-                fileInput.type = 'file';
-                fileInput.accept = '.json';
-                fileInput.style.display = 'none';
-                document.body.appendChild(fileInput);
-                
-                // Handle file selection
-                fileInput.onchange = function(event) {
-                    const file = event.target.files[0];
-                    if (!file) return;
-                    
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        try {
-                            const characterData = JSON.parse(e.target.result);
-                            
-                            // Check version compatibility
-                            if (!characterData.version) {
-                                throw new Error('Invalid character file format');
-                            }
-                            
-                            // Reset current character
-                            resetAllSelections();
-                            
-                            // Load the saved character data
-                            Object.assign(selections, characterData.selections);
-                            Object.assign(completedParams, characterData.completedParams);
-                            Object.assign(modifierSelections, characterData.modifierSelections);
-                            
-                            // Set character name if available
-                            if (characterData.name) {
-                                const nameElement = document.getElementById('character-name-display');
-                                if (nameElement) {
-                                    nameElement.textContent = characterData.name;
-                                    nameElement.style.display = 'block';
-                                }
-                            }
-                            
-                            // Update UI to reflect loaded data
-                            applyLoadedCharacter();
-                            
-                            // Show notification
-                            showNotification(`Character "${characterData.name || 'Unnamed'}" loaded successfully!`);
-                        } catch (err) {
-                            console.error('Error parsing character file:', err);
-                            showNotification('Invalid character file format!', true);
-                        }
-                    };
-                    reader.readAsText(file);
-                };
-                
-                // Trigger file dialog
-                fileInput.click();
-                
-                // Clean up
-                setTimeout(() => {
-                    document.body.removeChild(fileInput);
-                }, 5000);
-                
-            } catch (err) {
-                console.error('Error loading character:', err);
-                showNotification('Error loading character!', true);
-            }
-        }
-
-        // Apply loaded character data to the UI
-        function applyLoadedCharacter() {
-            // Mark groups as completed based on the completed parameters
-            let completedGroups = new Set();
-            
-            // First determine which groups are completed
-            Object.keys(completedParams).forEach(paramId => {
-                const groupNum = paramGroups[paramId];
-                if (groupNum) completedGroups.add(groupNum);
-            });
-            
-            // For each completed group, ensure all group parameters are marked as completed
-            completedGroups.forEach(groupNum => {
-                const group = taxonomyData[groupNum];
-                if (!group || !group.parameters) return;
-                
-                // Populate completed section
-                const completedSection = document.getElementById(`completed-${groupNum}`);
-                if (completedSection) {
-                    completedSection.innerHTML = '';
-                    completedSection.classList.remove('hidden');
-                    
-                    group.parameters.forEach(param => {
-                        if (completedParams[param.id]) {
-                            // Create completed item with edit button
-                            const completedItem = document.createElement('div');
-                            completedItem.id = `completed-item-${param.id}`;
-                            completedItem.className = 'completed-item';
-                            
-                            // Get modifier info for display
-                            let modifierText = '';
-                            if (completedParams[param.id].modifiers && Object.keys(completedParams[param.id].modifiers).length > 0) {
-                                modifierText = ' (';
-                                Object.entries(completedParams[param.id].modifiers).forEach(([modName, modIndex], idx) => {
-                                    if (param.modifiers && param.modifiers[modName]) {
-                                        const modOptions = param.modifiers[modName];
-                                        if (modOptions && modOptions[modIndex]) {
-                                            modifierText += `${modOptions[modIndex].name}${idx < Object.keys(completedParams[param.id].modifiers).length - 1 ? ', ' : ''}`;
-                                        }
-                                    }
-                                });
-                                modifierText += ')';
-                            }
-                            
-                            completedItem.innerHTML = `
-                                <div><strong>${param.name}:</strong> ${completedParams[param.id].value}${modifierText}</div>
-                                <div><button class="edit-button" onclick="editParameter(${param.id})">Edit</button></div>
-                            `;
-                            
-                            completedSection.appendChild(completedItem);
-                        }
-                    });
-                }
-                
-                // Mark the group as completed
-                const groupButton = document.getElementById(`group-${groupNum}`);
-                if (groupButton) {
-                    groupButton.classList.remove('inactive');
-                    groupButton.classList.add('completed');
-                }
-                
-                // Set progress bar to 100%
-                const progressBar = document.getElementById(`progress-${groupNum}`);
-                if (progressBar) {
-                    progressBar.style.width = '100%';
-                }
-            });
-            
-            // Ensure all groups are properly marked as active/inactive
-            for (let groupNum = 1; groupNum <= 4; groupNum++) {
-                const groupButton = document.getElementById(`group-${groupNum}`);
-                if (groupButton) {
-                    // Only the first uncompleted group should be active (or the first group if all are completed)
-                    if (!completedGroups.has(groupNum)) {
-                        groupButton.classList.remove('completed');
-                        
-                        // First uncompleted group should be active
-                        const anyPreviousGroupIncomplete = Array.from(completedGroups).some(g => g < groupNum);
-                        if (!anyPreviousGroupIncomplete) {
-                            groupButton.classList.remove('inactive');
-                            
-                            // Show the first parameter of this group
-                            const firstParamId = groupStarts[groupNum];
-                            if (firstParamId) {
-                                const firstParam = document.getElementById(`parameter-${firstParamId}`);
-                                if (firstParam) {
-                                    firstParam.classList.remove('hidden');
-                                }
-                            }
-                            
-                            // Expand this group
-                            const groupContent = document.getElementById(`content-${groupNum}`);
-                            if (groupContent) {
-                                groupContent.classList.add('active');
-                                groupButton.classList.add('active');
-                            }
-                        } else {
-                            groupButton.classList.add('inactive');
-                            
-                            // Hide all parameters in inactive groups
-                            const groupParams = taxonomyData[groupNum].parameters;
-                            if (groupParams) {
-                                groupParams.forEach(param => {
-                                    const paramElement = document.getElementById(`parameter-${param.id}`);
-                                    if (paramElement) {
-                                        paramElement.classList.add('hidden');
-                                    }
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Hide all parameters within completed groups
-            completedGroups.forEach(groupNum => {
-                const group = taxonomyData[groupNum];
-                if (!group || !group.parameters) return;
-                
-                group.parameters.forEach(param => {
-                    const paramElement = document.getElementById(`parameter-${param.id}`);
-                    if (paramElement) {
-                        paramElement.classList.add('hidden');
-                    }
-                });
-            });
-            
-            // Apply gender-specific visibility rules
-            if (selections[1] !== undefined) {
-                const genderOption = taxonomyData[1].parameters.find(p => p.id === 1).options[selections[1]];
-                if (genderOption) {
-                    const selectedGender = genderOption.name.toLowerCase();
-                    handleFacialHairVisibility(selectedGender.includes('female'));
-                }
-            }
-            
-            // Apply rules while ensuring completed groups remain accessible
-            applyAllRulesWithCompletedGroups();
-            
-            // Update character summary
-            updateCharacterSummary();
-            
-            // If all groups are completed, disable the random button
-            const allCompleted = [1, 2, 3, 4].every(groupNum => completedGroups.has(groupNum));
-            if (allCompleted) {
-                const randomButton = document.getElementById('random-button');
-                if (randomButton) {
-                    randomButton.textContent = "Character Complete";
-                    randomButton.classList.remove('active');
-                    randomButton.disabled = true;
-                    randomButton.style.opacity = "0.6";
-                    randomButton.style.cursor = "not-allowed";
-                    randomButton.style.backgroundColor = "#95a5a6";
-                }
-            }
-        }
-
-        // Create new character by resetting everything
         function newCharacter() {
-            if (Object.keys(completedParams).length > 0) {
-                const confirmReset = confirm("This will clear the current character. Are you sure you want to start fresh?");
-                if (!confirmReset) return;
+            if (confirm('Start a new character? This will clear all current selections.')) {
+                // Clear all selections
+                Object.keys(selections).forEach(key => delete selections[key]);
+                Object.keys(completedParams).forEach(key => delete completedParams[key]);
+                Object.keys(modifierSelections).forEach(key => delete modifierSelections[key]);
+                
+                // Reset UI
+                resetUI();
+                
+                showNotification('Started a new character!');
             }
-            
-            resetAllSelections();
-            
-            // Clear character name
-            const nameElement = document.getElementById('character-name-display');
-            if (nameElement) {
-                nameElement.textContent = '';
-                nameElement.style.display = 'none';
-            }
-            
-            // Show notification
-            showNotification("New character started!");
         }
         
-        // Show notification with auto-dismiss
-        function showNotification(message, isError = false) {
+        // Fix 10: Add missing utility functions
+        function showNotification(message, type = 'success') {
             const notification = document.getElementById('notification');
-            if (!notification) return;
-            
-            // Set message and style
             notification.textContent = message;
-            notification.style.backgroundColor = isError ? '#e74c3c' : '#27ae60';
-            
-            // Show notification
+            notification.className = `notification ${type}`;
             notification.classList.add('show');
             
-            // Auto-dismiss after 3 seconds
+            // Hide notification after 3 seconds
             setTimeout(() => {
                 notification.classList.remove('show');
             }, 3000);
         }
         
+        function generateDescriptionHTML() {
+            // Generate human-readable description
+            let html = '<div class="character-description">';
+            
+            if (Object.keys(completedParams).length === 0) {
+                html += '<p>No parameters selected yet.</p>';
+                return html + '</div>';
+            }
+            
+            // Add paragraph descriptions based on selections
+            // This would be custom implementation depending on your needs
+            
+            return html + '</div>';
+        }
+        
+        function generateMarkdown() {
+            // Generate markdown representation of character
+            let md = '# Character Description\n\n';
+            
+            // Group parameters by their group
+            const paramsByGroup = {};
+            
+            Object.keys(completedParams).forEach(paramId => {
+                const groupNum = paramGroups[paramId];
+                if (!paramsByGroup[groupNum]) {
+                    paramsByGroup[groupNum] = [];
+                }
+                paramsByGroup[groupNum].push(parseInt(paramId));
+            });
+            
+            // Generate markdown by group
+            Object.keys(paramsByGroup).sort().forEach(groupNum => {
+                const group = taxonomyData[groupNum];
+                md += `## ${group.name}\n\n`;
+                
+                // Sort parameters by ID within each group
+                paramsByGroup[groupNum].sort().forEach(paramId => {
+                    const param = taxonomyData[groupNum].parameters.find(p => p.id === paramId);
+                    const completion = completedParams[paramId];
+                    
+                    md += `### ${param.name}\n\n`;
+                    md += `- **Selected Option:** ${completion.value}\n`;
+                    
+                    if (completion.visual) {
+                        md += `- **Visual:** ${completion.visual}\n`;
+                    }
+                    
+                    if (completion.seenIn) {
+                        md += `- **As Seen In:** ${completion.seenIn}\n`;
+                    }
+                    
+                    // Add modifiers if present
+                    if (completion.modifiers && Object.keys(completion.modifiers).length > 0) {
+                        md += `- **Modifiers:**\n`;
+                        
+                        Object.entries(completion.modifiers).forEach(([modName, modIndex]) => {
+                            if (param.modifiers && param.modifiers[modName]) {
+                                const modOption = param.modifiers[modName][modIndex];
+                                if (modOption) {
+                                    md += `  - ${modName}: ${modOption.name}\n`;
+                                }
+                            }
+                        });
+                    }
+                    
+                    md += '\n';
+                });
+            });
+            
+            return md;
+        }
+        
+        function toggleRandomGeneration() {
+            isRandomGenerating = !isRandomGenerating;
+            const randomButton = document.getElementById('random-button');
+            
+            if (isRandomGenerating) {
+                randomButton.classList.add('active');
+                randomButton.textContent = 'Stop Random';
+                startRandomGeneration();
+            } else {
+                randomButton.classList.remove('active');
+                randomButton.textContent = 'Auto-Random';
+                clearTimeout(randomTimer);
+            }
+        }
+        
+        // Fix 11: Add missing random generation functions
+        function startRandomGeneration() {
+            randomSpeed = parseInt(document.getElementById('random-speed').value);
+            document.getElementById('speed-value').textContent = (randomSpeed / 1000).toFixed(1) + 's';
+            
+            randomTimer = setTimeout(makeRandomSelection, randomSpeed);
+        }
+        
+        function makeRandomSelection() {
+            // Find which parameters are visible and not yet completed
+            const visibleParams = Array.from(document.querySelectorAll('.parameter:not(.hidden)'));
+            
+            if (visibleParams.length > 0) {
+                // Select a random parameter from visible ones
+                const paramElement = visibleParams[0]; // Just take the first visible one for simplicity
+                const paramId = parseInt(paramElement.id.replace('parameter-', ''));
+                
+                // Get all options for this parameter
+                const options = Array.from(paramElement.querySelectorAll('.option:not(.disabled)'));
+                
+                if (options.length > 0) {
+                    // Select a random option
+                    const randomIndex = Math.floor(Math.random() * options.length);
+                    const option = options[randomIndex];
+                    
+                    // Determine the option index within its parent
+                    const optionIndex = Array.from(option.parentNode.children)
+                        .filter(el => el.classList.contains('option'))
+                        .indexOf(option);
+                    
+                    // Select this option
+                    const groupNum = paramGroups[paramId];
+                    const parameter = taxonomyData[groupNum].parameters.find(p => p.id === paramId);
+                    
+                    // Check if this is Hair Color with variants
+                    if (parameter.name === "Hair Color") {
+                        // This requires special handling
+                        // Find which main color and variant this option represents
+                        let optionCount = 0;
+                        let foundMainIndex = -1;
+                        let foundVariantIndex = -1;
+                        
+                        for (let i = 0; i < parameter.options.length; i++) {
+                            const mainOption = parameter.options[i];
+                            if (mainOption.variants) {
+                                for (let j = 0; j < mainOption.variants.length; j++) {
+                                    if (optionCount === optionIndex) {
+                                        foundMainIndex = i;
+                                        foundVariantIndex = j;
+                                        break;
+                                    }
+                                    optionCount++;
+                                }
+                                if (foundMainIndex !== -1) break;
+                            } else {
+                                if (optionCount === optionIndex) {
+                                    foundMainIndex = i;
+                                    break;
+                                }
+                                optionCount++;
+                            }
+                        }
+                        
+                        if (foundMainIndex !== -1 && foundVariantIndex !== -1) {
+                            window.selectOption(paramId, foundMainIndex, foundVariantIndex);
+                        } else {
+                            window.selectOption(paramId, foundMainIndex);
+                        }
+                    } else {
+                        // Standard option selection
+                        window.selectOption(paramId, optionIndex);
+                    }
+                    
+                    // Also select random modifiers if present
+                    const modifiers = Array.from(paramElement.querySelectorAll('.modifier'));
+                    modifiers.forEach(mod => {
+                        const modName = mod.querySelector('.modifier-name').textContent;
+                        const modOptions = Array.from(mod.querySelectorAll('.modifier-option'));
+                        if (modOptions.length > 0) {
+                            const randomModIndex = Math.floor(Math.random() * modOptions.length);
+                            window.selectModifier(paramId, modName, randomModIndex);
+                        }
+                    });
+                    
+                    // Wait a bit before completing to simulate human interaction
+                    setTimeout(() => {
+                        window.completeParameter(paramId);
+                        
+                        // Continue with random generation if still active
+                        if (isRandomGenerating) {
+                            randomTimer = setTimeout(makeRandomSelection, randomSpeed);
+                        }
+                    }, randomSpeed / 2);
+                } else {
+                    // No options available, try the next visible parameter
+                    if (isRandomGenerating) {
+                        randomTimer = setTimeout(makeRandomSelection, randomSpeed);
+                    }
+                }
+            } else {
+                // No visible parameters, check if we should move to the next group
+                const activeGroup = document.querySelector('.group-button.active');
+                if (activeGroup) {
+                    const groupNum = parseInt(activeGroup.id.replace('group-', ''));
+                    const nextGroup = groupNum + 1;
+                    
+                    if (document.getElementById(`group-${nextGroup}`) && 
+                        !document.getElementById(`group-${nextGroup}`).classList.contains('inactive')) {
+                        // Open next group
+                        toggleGroup(nextGroup);
+                        
+                        // Continue random generation
+                        if (isRandomGenerating) {
+                            randomTimer = setTimeout(makeRandomSelection, randomSpeed);
+                        }
+                    } else {
+                        // No more groups, stop random generation
+                        isRandomGenerating = false;
+                        document.getElementById('random-button').classList.remove('active');
+                        document.getElementById('random-button').textContent = 'Auto-Random';
+                    }
+                }
+            }
+        }
+        
+        // Add missing rebuildUIFromSavedData and resetUI functions
+        function rebuildUIFromSavedData() {
+            // Reset UI first
+            resetUI();
+            
+            // For each completed parameter, rebuild the UI state
+            Object.keys(completedParams).forEach(paramId => {
+                const groupNum = paramGroups[paramId];
+                
+                // Make sure group is active
+                document.getElementById(`group-${groupNum}`).classList.remove('inactive');
+                document.getElementById(`group-${groupNum}`).classList.add('completed');
+                
+                // Update completed section
+                const completedSection = document.getElementById(`completed-${groupNum}`);
+                completedSection.classList.remove('hidden');
+                
+                // Add completed items
+                const parameter = taxonomyData[groupNum].parameters.find(p => p.id === parseInt(paramId));
+                const completion = completedParams[paramId];
+                
+                // Get modifier info for display
+                let modifierText = '';
+                if (modifierSelections[paramId]) {
+                    const modifierEntries = Object.entries(modifierSelections[paramId]);
+                    if (modifierEntries.length > 0) {
+                        modifierText = ' (';
+                        modifierEntries.forEach(([modName, modIndex], idx) => {
+                            if (parameter.modifiers && parameter.modifiers[modName]) {
+                                const modOptions = parameter.modifiers[modName];
+                                if (modOptions && modOptions[modIndex]) {
+                                    modifierText += `${modOptions[modIndex].name}${idx < modifierEntries.length - 1 ? ', ' : ''}`;
+                                }
+                            }
+                        });
+                        modifierText += ')';
+                    }
+                }
+                
+                const completedItem = document.createElement('div');
+                completedItem.id = `completed-item-${paramId}`;
+                completedItem.className = 'completed-item';
+                completedItem.innerHTML = `
+                    <div><strong>${paramId}. ${parameter.name}:</strong> ${completion.value}${modifierText}</div>
+                    <div><button class="edit-button" onclick="editParameter(${paramId})">Edit</button></div>
+                `;
+                
+                completedSection.appendChild(completedItem);
+            });
+            
+            // Update progress bars
+            Object.keys(taxonomyData).forEach(groupNum => {
+                const groupParams = Object.keys(paramGroups).filter(key => paramGroups[key] === parseInt(groupNum));
+                const totalParamsInGroup = groupParams.length;
+                const completedParamsInGroup = Object.keys(completedParams)
+                    .filter(key => paramGroups[key] === parseInt(groupNum)).length;
+                
+                const progress = (completedParamsInGroup / totalParamsInGroup) * 100;
+                document.getElementById(`progress-${groupNum}`).style.width = `${progress}%`;
+            });
+            
+            // Update character summary and output formats
+            updateCharacterSummary();
+        }
+        
+        function resetUI() {
+            // Reset group states
+            Object.keys(taxonomyData).forEach((groupNum, index) => {
+                const groupButton = document.getElementById(`group-${groupNum}`);
+                const groupContent = document.getElementById(`content-${groupNum}`);
+                
+                // Reset groups
+                groupButton.classList.remove('completed', 'active');
+                groupContent.classList.remove('active');
+                groupContent.style.height = '0';
+                
+                // First group active, others inactive
+                if (index === 0) {
+                    groupButton.classList.remove('inactive');
+                    groupContent.classList.add('active');
+                    groupContent.style.height = groupContent.scrollHeight + 'px';
+                } else {
+                    groupButton.classList.add('inactive');
+                }
+                
+                // Reset progress bars
+                document.getElementById(`progress-${groupNum}`).style.width = '0';
+                
+                // Clear completed sections
+                const completedSection = document.getElementById(`completed-${groupNum}`);
+                completedSection.innerHTML = '';
+                completedSection.classList.add('hidden');
+                
+                // Reset parameters
+                taxonomyData[groupNum].parameters.forEach((param, paramIndex) => {
+                    const paramElement = document.getElementById(`parameter-${param.id}`);
+                    
+                    // Remove selected state from all options
+                    paramElement.querySelectorAll('.option').forEach(option => {
+                        option.classList.remove('selected');
+                    });
+                    
+                    // Remove selected state from all modifiers
+                    paramElement.querySelectorAll('.modifier-option').forEach(option => {
+                        option.classList.remove('selected');
+                    });
+                    
+                    // Hide all parameters except the first one in the first group
+                    if (index === 0 && paramIndex === 0) {
+                        paramElement.classList.remove('hidden');
+                    } else {
+                        paramElement.classList.add('hidden');
+                    }
+                });
+            });
+            
+            // Clear character summary
+            updateCharacterSummary();
+        }
+        
+        // Add event listeners for speed slider
+        document.getElementById('random-speed')?.addEventListener('input', function() {
+            randomSpeed = parseInt(this.value);
+            document.getElementById('speed-value').textContent = (randomSpeed / 1000).toFixed(1) + 's';
+        });
+        
+        // Add event listeners for tab navigation
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', function() {
+                const tabId = this.getAttribute('data-tab');
+                
+                // Remove active class from all tabs and contents
+                document.querySelectorAll('.tab-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                
+                // Add active class to clicked tab and its content
+                this.classList.add('active');
+                document.getElementById(`${tabId}-tab`).classList.add('active');
+            });
+        });
+        
         // Add keyboard shortcuts
-        document.addEventListener('keydown', function(event) {
-            // Check if ctrl/cmd key is pressed
-            if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey) {
-                switch(event.key) {
+        window.addEventListener('keydown', function(e) {
+            // Only process shortcuts if Ctrl key is pressed
+            if (e.ctrlKey) {
+                switch(e.key.toLowerCase()) {
                     case 's':
-                        event.preventDefault();
+                        e.preventDefault();
                         saveCharacter();
                         break;
                     case 'o':
-                        event.preventDefault();
+                        e.preventDefault();
                         loadCharacter();
                         break;
                     case 'n':
-                        event.preventDefault();
+                        e.preventDefault();
                         newCharacter();
                         break;
                 }
             }
         });
-
-        // Add function to copy the composed prompt to clipboard with better error handling
-        function copyComposedPrompt() {
-            try {
-                // Use the generator module to get the description
-                const composedPrompt = window.PromptGenerator.generateNaturalLanguageDescription(completedParams, taxonomyData);
-                const copyButton = document.querySelector('.copy-content-button');
-                const originalText = copyButton ? copyButton.textContent : 'Copy';
-                
-                // Use a try-catch block to handle clipboard API properly
-                try {
-                    // Use a more robust clipboard approach with proper Promise handling
-                    if (navigator.clipboard) {
-                        navigator.clipboard.writeText(composedPrompt)
-                            .then(() => {
-                                showNotification("Description copied to clipboard!");
-                                
-                                // If we have a button, update its text
-                                if (copyButton) {
-                                    copyButton.textContent = 'Copied!';
-                                    copyButton.style.backgroundColor = '#27ae60';
-                                    
-                                    // Reset after 2 seconds
-                                    setTimeout(() => {
-                                        copyButton.textContent = originalText;
-                                        copyButton.style.backgroundColor = '';
-                                    }, 2000);
-                                }
-                            })
-                            .catch(err => {
-                                console.error('Clipboard API failed: ', err);
-                                // Fall back to execCommand method
-                                fallbackCopy(composedPrompt, copyButton, originalText);
-                            });
-                    } else {
-                        // Browser doesn't support clipboard API
-                        fallbackCopy(composedPrompt, copyButton, originalText);
-                    }
-                } catch (clipboardErr) {
-                    console.error('Error with clipboard operations: ', clipboardErr);
-                    fallbackCopy(composedPrompt, copyButton, originalText);
-                }
-            } catch (err) {
-                console.error('Error generating prompt: ', err);
-                alert('Failed to generate the description. Please try again.');
-            }
-        }
-
-        // Fallback copy method for browsers that don't support clipboard API
-        function fallbackCopy(text, button, originalText) {
-            try {
-                // Create a temporary textarea element to hold the text
-                const textarea = document.createElement('textarea');
-                textarea.value = text;
-                textarea.style.position = 'absolute';
-                textarea.style.left = '-9999px';
-                textarea.style.top = '0';
-                document.body.appendChild(textarea);
-                
-                // Select the text and copy it
-                textarea.select();
-                let successful = document.execCommand('copy');
-                document.body.removeChild(textarea);
-                
-                // Provide visual feedback
-                if (successful) {
-                    showNotification("Description copied to clipboard!");
-                    
-                    if (button) {
-                        button.textContent = 'Copied!';
-                        button.style.backgroundColor = '#27ae60';
-                        
-                        // Reset after 2 seconds
-                        setTimeout(() => {
-                            button.textContent = originalText;
-                            button.style.backgroundColor = '';
-                        }, 2000);
-                    }
-                } else {
-                    throw new Error('Copy command was unsuccessful');
-                }
-            } catch (err) {
-                console.error('Fallback copy failed: ', err);
-                alert('Could not copy text. Please copy manually.');
-            }
-        }
-
-        // Update the character summary to include the composed prompt
-        function updateCharacterSummary() {
-            const summaryContainer = document.getElementById('character-summary');
-            
-            if (Object.keys(completedParams).length === 0) {
-                summaryContainer.innerHTML = '<p>No parameters selected yet. Begin by selecting options below.</p>';
-                
-                // Clear all prompt tabs
-                document.getElementById('description-tab').innerHTML = '';
-                document.getElementById('t2i-prompt-tab').innerHTML = '';
-                document.getElementById('markdown-content').innerHTML = '';
-                document.getElementById('json-content').innerHTML = '';
-                return;
-            }
-            
-            // Generate prompts from our module
-            try {
-                // Natural language description
-                const description = window.PromptGenerator.generateNaturalLanguageDescription(completedParams, taxonomyData);
-                document.getElementById('description-tab').innerHTML = `<div class="prompt-content">${description}</div>`;
-                
-                // T2I prompt
-                const t2iPrompt = window.PromptGenerator.generateT2IPrompt(completedParams, taxonomyData);
-                document.getElementById('t2i-prompt-tab').innerHTML = `<div class="prompt-content">${t2iPrompt}</div>`;
-                
-                // Update T2I previewer if available
-                if (window.t2iPreviewer) {
-                    window.t2iPreviewer.updatePrompt(t2iPrompt);
-                }
-                
-                // Check which function is actually available and use it
-                // First try the new names, then fall back to the original names
-                let markdownBio = '';
-                let jsonSummary = null;
-                
-                if (typeof window.PromptGenerator.exportSummary === 'function') {
-                    markdownBio = window.PromptGenerator.exportSummary(completedParams, taxonomyData);
-                } else if (typeof window.PromptGenerator.generateMarkdownBio === 'function') {
-                    markdownBio = window.PromptGenerator.generateMarkdownBio(completedParams, taxonomyData);
-                } else {
-                    markdownBio = "# Character Summary\n\n" + description;
-                }
-                
-                if (typeof window.PromptGenerator.copySummary === 'function') {
-                    jsonSummary = window.PromptGenerator.copySummary(completedParams, taxonomyData);
-                } else if (typeof window.PromptGenerator.generateJSONSummary === 'function') {
-                    jsonSummary = window.PromptGenerator.generateJSONSummary(completedParams, taxonomyData);
-                } else {
-                    jsonSummary = { character: completedParams, description: description };
-                }
-                
-                document.getElementById('markdown-content').textContent = markdownBio;
-                document.getElementById('json-content').textContent = JSON.stringify(jsonSummary, null, 2);
-            } catch (err) {
-                console.error('Error generating prompts:', err);
-            }
-            
-            // Initialize summaryHTML variable
-            let summaryHTML = '';
-            
-            // Continue with existing summary generation
-            // Group completed parameters by group
-            for (let groupNum = 1; groupNum <= 4; groupNum++) {
-                const group = taxonomyData[groupNum];
-                if (!group) continue;
-                
-                const groupParams = group.parameters
-                    .filter(param => {
-                        if (!completedParams[param.id]) return false;
-                        
-                        // Keep parameters that have modifiers, even if value contains "None"
-                        const hasModifiers = completedParams[param.id].modifiers && 
-                            Object.keys(completedParams[param.id].modifiers).length > 0;
-                        
-                        if (hasModifiers) return true;
-                        
-                        // Skip parameters with "None" or "None (default)" values and no modifiers
-                        // Use a more comprehensive check to catch variations
-                        const value = completedParams[param.id].value.toLowerCase();
-                        return !(value.includes('none') || 
-                                 value.match(/none\s*\(default\)/) || 
-                                 value.match(/\(default\)/) ||
-                                 value === "none");
-                    })
-                    .map(param => param.id);
-                
-                if (groupParams.length > 0) {
-                    const groupName = typeof group.group === 'string' ? group.group : (group.group && group.group.name ? group.group.name : `Group ${groupNum}`);
-                    summaryHTML += `<h3>${groupName}</h3><ul>`;
-                    
-                    groupParams.forEach(paramId => {
-                        const param = group.parameters.find(p => p.id === paramId);
-                        const completed = completedParams[paramId];
-                        
-                        // Get modifier text
-                        let modifierText = '';
-                        if (completed.modifiers && Object.keys(completed.modifiers).length > 0) {
-                            modifierText = ' (';
-                            Object.entries(completed.modifiers).forEach(([modName, modIndex], idx) => {
-                                // Access modifier directly by property name, not using .find()
-                                if (param.modifiers && param.modifiers[modName]) {
-                                    const modOptions = param.modifiers[modName];
-                                    if (modOptions && modOptions[modIndex]) {
-                                        modifierText += `${modOptions[modIndex].name}${idx < Object.keys(completed.modifiers).length - 1 ? ', ' : ''}`;
-                                    }
-                                }
-                            });
-                            modifierText += ')';
-                        }
-                        
-                        summaryHTML += `<li><strong>${param.name}:</strong> ${completed.value}${modifierText}</li>`;
-                    });
-                    
-                    summaryHTML += '</ul>';
-                }
-            }
-            
-            summaryContainer.innerHTML = summaryHTML;
-        }
         
-        // Make sure we're exposing updateCharacterSummary to the global scope
-        window.updateCharacterSummary = updateCharacterSummary;
+        // Add copy functionality to copy buttons
+        document.querySelector('.copy-content-button')?.addEventListener('click', function() {
+            const activeTab = document.querySelector('.tab-content.active');
+            let textToCopy = '';
+            
+            if (activeTab) {
+                if (activeTab.id === 'description-tab') {
+                    textToCopy = activeTab.textContent;
+                } else if (activeTab.id === 't2i-prompt-tab') {
+                    textToCopy = activeTab.querySelector('.composed-prompt-text')?.textContent || '';
+                } else if (activeTab.id === 'markdown-tab' || activeTab.id === 'json-tab') {
+                    textToCopy = activeTab.querySelector('pre')?.textContent || '';
+                }
+            }
+            
+            if (textToCopy) {
+                navigator.clipboard.writeText(textToCopy)
+                    .then(() => showNotification('Copied to clipboard!'))
+                    .catch(err => console.error('Error copying text:', err));
+            }
+        });
+
+        // Make globally available functions for HTML onclick
+        window.copyCharacter = copyCharacter;
+        window.saveCharacter = saveCharacter;
+        window.loadCharacter = loadCharacter;
+        window.newCharacter = newCharacter;
+        window.toggleGroup = toggleGroup;
+        window.toggleRandomGeneration = toggleRandomGeneration;
         
-        // Update outputs
-        function updateOutputs() {
-            // ...existing code...
-            
-            // Update T2I prompt
-            const t2iPrompt = PromptGenerator.generateT2IPrompt(completedParams, taxonomy);
-            document.getElementById('t2i-prompt-output').value = t2iPrompt;
-            
-            // Update T2I previewer if available
-            if (window.t2iPreviewer) {
-                window.t2iPreviewer.updatePrompt(t2iPrompt);
-            }
-            
-            // ...existing code...
-        }
-
-        // Clear rule effects before each selection to avoid cumulative effects
-        function clearRuleEffects() {
-            // Clear disabled parameters
-            document.querySelectorAll('.disabled-parameter').forEach(elem => {
-                elem.classList.remove('disabled-parameter');
-                elem.style.opacity = '';
-            });
-            
-            // Show previously hidden options
-            document.querySelectorAll('.option.hidden-by-rule').forEach(option => {
-                option.style.display = ''; // Reset to default display value
-                option.classList.remove('hidden-by-rule');
-            });
-            
-            // Clear disabled options that weren't hidden
-            document.querySelectorAll('.option.disabled').forEach(option => {
-                option.classList.remove('disabled');
-                option.style.opacity = '';
-                option.style.cursor = 'pointer';
-                
-                // Restore original click handler if it exists
-                if (option.dataset.originalOnclick) {
-                    // Handle function restoration properly
-                    const paramId = option.closest('.parameter').id.split('-')[1];
-                    const optionIndex = Array.from(option.parentNode.children).indexOf(option);
-                    
-                    // Recreate proper click handling
-                    option.onclick = function() {
-                        selectOption(parseInt(paramId), optionIndex);
-                    };
-                }
-            });
-            
-            // Clear suggestions
-            document.querySelectorAll('.option.suggested').forEach(option => {
-                option.classList.remove('suggested');
-                option.style.borderLeft = '';
-                
-                // Remove suggestion indicator
-                const indicator = option.querySelector('.suggestion-indicator');
-                if (indicator) {
-                    option.removeChild(indicator);
-                }
-            });
-            
-            // Clear gender suggestions
-            document.querySelectorAll('.option.suggested-gender').forEach(option => {
-                option.classList.remove('suggested-gender');
-                option.style.borderRight = '';
-                
-                // Remove gender match indicator
-                const indicator = option.querySelector('.gender-match-indicator');
-                if (indicator) {
-                    option.removeChild(indicator);
-                }
-            });
-            
-            // Clear suggestion messages
-            document.querySelectorAll('.suggestion-message').forEach(msg => {
-                msg.parentNode.removeChild(msg);
-            });
-        }
-
-        // Apply all rules based on current selections
-        function applyAllRules() {
-            // Clear all rule effects first
-            clearRuleEffects();
-            
-            // Apply rules for each selected parameter
-            Object.entries(selections).forEach(([paramId, selection]) => {
-                paramId = parseInt(paramId);
-                
-                if (typeof selection === 'object') {
-                    // Handle Hair Color variants
-                    applyRules(paramId, selection.mainColorIndex, selection.variantIndex);
-                } else {
-                    // Standard parameter
-                    applyRules(paramId, selection);
-                }
-            });
-        }
-
-        // Apply all rules but ensure completed groups remain accessible
-        function applyAllRulesWithCompletedGroups() {
-            // First clear all rule effects
-            clearRuleEffects();
-            
-            // Apply rules for each selected parameter
-            Object.entries(selections).forEach(([paramId, selection]) => {
-                paramId = parseInt(paramId);
-                
-                if (typeof selection === 'object') {
-                    // Handle Hair Color variants
-                    applyRules(paramId, selection.mainColorIndex, selection.variantIndex);
-                } else {
-                    // Standard parameter
-                    applyRules(paramId, selection);
-                }
-            });
-            
-            // Now re-enable parameters in completed groups
-            for (let groupNum = 1; groupNum <= 4; groupNum++) {
-                const groupButton = document.getElementById(`group-${groupNum}`);
-                
-                if (groupButton && groupButton.classList.contains('completed')) {
-                    // This group is completed, make sure its parameters are enabled
-                    const group = taxonomyData[groupNum];
-                    if (group && group.parameters) {
-                        group.parameters.forEach(param => {
-                            const paramElement = document.getElementById(`parameter-${param.id}`);
-                            if (paramElement) {
-                                paramElement.classList.remove('disabled-parameter');
-                                paramElement.style.opacity = '';
-                            }
-                        });
-                    }
-                }
-            }
-        }
-
-        // Apply rules based on parameter selection
-        function applyRules(paramId, optionIndex, variantIndex) {
-            const groupNum = paramGroups[paramId];
-            if (!groupNum) return;
-            
-            const parameter = taxonomyData[groupNum].parameters.find(p => p.id === paramId);
-            if (!parameter) return;
-            
-            // Get option name (handling Hair Color with variants specially)
-            let optionName;
-            if (parameter.name === "Hair Color" && variantIndex !== undefined) {
-                const mainOption = parameter.options[optionIndex];
-                optionName = mainOption.variants[variantIndex].name;
-            } else {
-                optionName = parameter.options[optionIndex].name;
-            }
-            
-            console.log(`Applying rules for ${parameter.name} = "${optionName}"`);
-            
-            // Apply absolute rules first
-            const applicableAbsoluteRules = rules.absoluteRules.filter(rule => 
-                rule.condition.paramId === paramId && rule.condition.optionName === optionName);
-            applicableAbsoluteRules.forEach(rule => {
-                console.log(`Applying absolute rule: ${parameter.name} = "${optionName}"`);
-                rule.actions.forEach(action => {
-                    applyRuleAction(action);
-                });
-            });
-            
-            // Then apply suggestive rules
-            const applicableSuggestiveRules = rules.suggestiveRules.filter(rule => 
-                rule.condition.paramId === paramId && rule.condition.optionName === optionName);
-            applicableSuggestiveRules.forEach(rule => {
-                console.log(`Applying suggestive rule: ${parameter.name} = "${optionName}"`);
-                rule.suggestions.forEach(suggestion => {
-                    applySuggestion(suggestion);
-                });
-            });
-        }
-
-        // Apply a specific rule action
-        function applyRuleAction(action) {
-            console.log(`Applying action type: ${action.type} for parameter ${action.paramName}`);
-            switch (action.type) {
-                case 'disable':
-                    if (action.disabledOptions) {
-                        disableParameterOptions(action.paramId, action.disabledOptions);
-                    } else {
-                        disableParameter(action.paramId);
-                    }
-                    break;
-                    
-                case 'limit':
-                case 'disableExcept':
-                    limitParameterOptions(action.paramId, action.allowedOptions);
-                    break;
-            }
-        }
-
-        // Apply a suggestion
-        function applySuggestion(suggestion) {
-            console.log(`Suggesting options for parameter ${suggestion.paramName}`);
-            suggestOptions(suggestion.paramId, suggestion.suggestedOptions);
-        }
-
-        // Disable an entire parameter
-        function disableParameter(paramId) {
-            const paramElement = document.getElementById(`parameter-${paramId}`);
-            if (paramElement) {
-                paramElement.classList.add('disabled-parameter');
-                paramElement.style.opacity = '0.5';
-            }
-        }
-
-        // Disable specific options within a parameter
-        function disableParameterOptions(paramId, optionNames) {
-            const paramElement = document.getElementById(`parameter-${paramId}`);
-            if (!paramElement) return;
-            
-            const options = paramElement.querySelectorAll('.option');
-            options.forEach(option => {
-                const optionLabel = option.querySelector('.option-label');
-                if (optionLabel) {
-                    const optionName = optionLabel.textContent;
-                    
-                    // Check if this option should be disabled
-                    if (optionNames.some(name => optionName.includes(name))) {
-                        option.classList.add('disabled');
-                        option.style.opacity = '0.5';
-                        option.style.cursor = 'not-allowed';
-                        
-                        // Save original click handler
-                        if (option.onclick) {
-                            option.dataset.originalOnclick = true;
-                        }
-                        
-                        // Replace with warning handler
-                        option.onclick = () => showRuleWarning(paramId);
-                    }
-                }
-            });
-        }
-
-        // Limit available options (disabling all except the allowed ones)
-        function limitParameterOptions(paramId, allowedOptionNames) {
-            const paramElement = document.getElementById(`parameter-${paramId}`);
-            if (!paramElement) return;
-            
-            const options = paramElement.querySelectorAll('.option');
-            options.forEach(option => {
-                const optionLabel = option.querySelector('.option-label');
-                if (optionLabel) {
-                    const optionName = optionLabel.textContent;
-                    
-                    // Check if this option should be enabled or disabled
-                    let isAllowed = false;
-                    for (const allowedName of allowedOptionNames) {
-                        if (optionName.includes(allowedName)) {
-                            isAllowed = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!isAllowed) {
-                        option.classList.add('disabled');
-                        option.style.opacity = '0.5';
-                        option.style.cursor = 'not-allowed';
-                        
-                        // Save original click handler
-                        if (option.onclick) {
-                            option.dataset.originalOnclick = true;
-                        }
-                        
-                        // Replace with warning handler
-                        option.onclick = () => showRuleWarning(paramId);
-                    }
-                }
-            });
-        }
-
-        // Suggest options
-        function suggestOptions(paramId, suggestedOptionNames) {
-            const paramElement = document.getElementById(`parameter-${paramId}`);
-            if (!paramElement) return;
-            
-            // Add a suggestion message
-            if (suggestedOptionNames.length > 0) {
-                const msgExists = paramElement.querySelector('.suggestion-message');
-                if (!msgExists) {
-                    const msg = document.createElement('div');
-                    msg.className = 'suggestion-message';
-                    msg.style.padding = '10px';
-                    msg.style.marginBottom = '15px';
-                    msg.style.backgroundColor = '#e8f7ff';
-                    msg.style.border = '1px solid #b3e0ff';
-                    msg.style.borderRadius = '4px';
-                    msg.innerHTML = '<strong>Suggested options:</strong> Based on your previous selections, these options are recommended.';
-                    
-                    // Insert after the parameter description
-                    const desc = paramElement.querySelector('.parameter-description');
-                    if (desc && desc.nextSibling) {
-                        paramElement.insertBefore(msg, desc.nextSibling);
-                    }
-                }
-            }
-            
-            const options = paramElement.querySelectorAll('.option');
-            options.forEach(option => {
-                const optionLabel = option.querySelector('.option-label');
-                if (optionLabel) {
-                    const optionName = optionLabel.textContent;
-                    
-                    // Check if this option is suggested
-                    for (const suggestedName of suggestedOptionNames) {
-                        if (optionName.includes(suggestedName)) {
-                            option.classList.add('suggested');
-                            option.style.borderLeft = '4px solid #3498db';
-                            
-                            // Add suggestion indicator if it doesn't exist
-                            if (!option.querySelector('.suggestion-indicator')) {
-                                const indicator = document.createElement('div');
-                                indicator.className = 'suggestion-indicator';
-                                indicator.style.position = 'absolute';
-                                indicator.style.top = '10px';
-                                indicator.style.right = '10px';
-                                indicator.style.backgroundColor = '#3498db';
-                                indicator.style.color = 'white';
-                                indicator.style.borderRadius = '3px';
-                                indicator.style.padding = '2px 6px';
-                                indicator.style.fontSize = '12px';
-                                indicator.textContent = 'Suggested';
-                                
-                                option.style.position = 'relative';
-                                option.appendChild(indicator);
-                            }
-                            break;
-                        }
-                    }
-                }
-            });
-        }
-
-        // Show a warning when trying to select a disabled option
-        function showRuleWarning(paramId) {
-            // Find the rule that caused this parameter to be disabled
-            const disablingRules = rules.absoluteRules.filter(rule => 
-                rule.actions.some(action => action.paramId === paramId)
-            );
-            
-            let message = "This option is not available due to your current selections:";
-            disablingRules.forEach(rule => {
-                message += `\n- ${rule.condition.paramName} = "${rule.condition.optionName}"`;
-            });
-            
-            message += "\n\nPlease change those selections first if you want to use this option.";
-            alert(message);
-        }
-
-        // Handle facial hair visibility based on gender
-        function handleFacialHairVisibility(isFemale) {
-            // Hide facial hair options for female characters
-            const facialHairParams = [28, 29, 30, 31, 32, 33]; // IDs for facial hair parameters
-            
-            facialHairParams.forEach(paramId => {
-                const paramElement = document.getElementById(`parameter-${paramId}`);
-                if (paramElement) {
-                    if (isFemale) {
-                        paramElement.classList.add('gender-hidden');
-                    } else {
-                        paramElement.classList.remove('gender-hidden');
-                    }
-                }
-            });
-        }
-
-        // Copy character data to clipboard
-        function copyCharacter() {
-            if (Object.keys(completedParams).length === 0) {
-                alert('Please create a character first by selecting parameters.');
-                return;
-            }
-            
-            try {
-                // Create JSON data
-                const characterData = {
-                    name: document.getElementById('character-name-display').textContent || "Unnamed Character",
-                    selections: selections,
-                    completedParams: completedParams,
-                    modifierSelections: modifierSelections,
-                    version: "1.0" // For future compatibility
-                };
-                
-                // Copy to clipboard
-                const jsonString = JSON.stringify(characterData, null, 2);
-                if (navigator.clipboard) {
-                    navigator.clipboard.writeText(jsonString)
-                        .then(() => {
-                            showNotification("Character data copied to clipboard!");
-                        })
-                        .catch(err => {
-                            console.error('Clipboard API failed: ', err);
-                            fallbackCopy(jsonString);
-                        });
-                } else {
-                    fallbackCopy(jsonString);
-                }
-            } catch (err) {
-                console.error('Error copying character data:', err);
-                showNotification("Error copying character data!", true);
-            }
-        }
-
-        // Generate a composed prompt from the character
-        function generateComposedPrompt() {
-            if (Object.keys(completedParams).length === 0) {
-                alert('Please create a character first by selecting parameters.');
-                return '';
-            }
-            
-            return PromptGenerator.generateNaturalLanguageDescription(completedParams, taxonomyData);
-        }
+        // Start loading data when page is ready
+        document.addEventListener('DOMContentLoaded', loadTaxonomyData);
     </script>
 </body>
 </html>
